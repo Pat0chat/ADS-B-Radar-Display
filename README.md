@@ -25,6 +25,7 @@ Ce script affiche :
 ### dump1090-fa
 ```bash
 sudo apt-get install build-essential fakeroot debhelper librtlsdr-dev pkg-config libncurses5-dev libbladerf-dev libhackrf-dev liblimesuite-dev libsoapysdr-dev devscripts
+git clone https://github.com/flightaware/dump1090.git
 ./prepare-build.sh bookworm
 cd package-bookworm
 dpkg-buildpackage -b --no-sign
