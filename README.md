@@ -7,9 +7,7 @@ Ce script affiche :
 ✔ symbole avion orienté selon le cap  
 ✔ altitude + vitesse + identification  
 ✔ historique des trajectoires  
-✔ animation fluide (30 FPS)  
 ✔ clic sur avion → fenêtre d’informations  
-✔ sauvegarde automatique dans `config.json`
 
 ## 📦 1. Prérequis
 
