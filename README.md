@@ -52,7 +52,7 @@ Ouvrir le fichier `config.json` dans le dossier **ADS-B-Radar-Display** et modif
 }
 ```
 
-## ▶️ 6. Lancer l’application
+## ▶️ 4. Lancer l’application
 
 ### dump1090-fa
 ```bash
