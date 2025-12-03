@@ -8,7 +8,7 @@
 
 # Paths
 RADAR_SCRIPT_PATH="./radar_adsb_tk.py"
-DUMP_CMD="/home/dump1090/prepa/dump1090 --net --interactive"
+DUMP_CMD="./dump1090/dump1090 --net --interactive"
 LOGFILE="radar.log"
 
 echo "----------------------------------------" | tee -a "$LOGFILE"
