@@ -82,6 +82,7 @@ def destination_point(lat_deg, lon_deg, bearing_deg, distance_km):
 def km_from_knots(kts):
     return kts * 1.852 / 3600.0
 
+
 def gen_category():
     return random.choice([
         "A",   # fixed-wing
@@ -89,6 +90,7 @@ def gen_category():
         "C",   # gliders/balloons
         "D"   # UAV / special
     ])
+
 
 def gen_hex():
     return "".join(random.choice("0123456789abcdef") for _ in range(6))
@@ -139,7 +141,8 @@ class Aircraft:
 
         if time.time() - self._last_behavior > random.uniform(10, 25):
             self.turn_rate = random.uniform(-4, 4)
-            self.speed = max(150, min(500, self.speed + random.uniform(-40, 40)))
+            self.speed = max(
+                150, min(500, self.speed + random.uniform(-40, 40)))
             # Smooth vertical rate change
             delta_vs = random.uniform(-600, 600)
             self.vspeed = max(-2500, min(2500, self.vspeed + delta_vs))

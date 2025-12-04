@@ -244,8 +244,15 @@ class ADSBRadarApp:
 
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
                                 height=CANVAS_SIZE, bg="#02121a")
-        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.bind("<Configure>", self.on_canvas_resize)
         self.canvas.bind("<Button-1>", self.on_canvas_click)
+        self.canvas_width = CANVAS_SIZE
+        self.canvas_height = CANVAS_SIZE
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        root.grid_columnconfigure(0, weight=1)
+        root.grid_rowconfigure(0, weight=1)
+        root.bind("<F11>", lambda e: root.attributes("-fullscreen", True))
+        root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
         # side controls
         controls = ttk.Frame(root, padding=(6, 6))
@@ -280,10 +287,11 @@ class ADSBRadarApp:
         ttk.Button(controls, text='Clear Trails',
                    command=self.clear_trails).pack(fill='x', pady=(6, 0))
 
-        ttk.Label(controls, text="Altitude Legend:").pack(anchor="w", pady=(6, 0))
+        ttk.Label(controls, text="Altitude Legend:").pack(
+            anchor="w", pady=(6, 0))
 
         alt_legend = tk.Canvas(controls, width=140, height=30,
-                            bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+                               bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         alt_legend.pack(pady=(2, 6))
 
         # Draw horizontal gradient (0 ft → 40,000 ft)
@@ -295,11 +303,12 @@ class ADSBRadarApp:
 
         # Tick labels
         alt_legend.create_text(5, 15, anchor="w", text="0 ft", font=(None, 8))
-        alt_legend.create_text(135, 15, anchor="e", text="40,000 ft", font=(None, 8))
+        alt_legend.create_text(135, 15, anchor="e",
+                               text="40,000 ft", font=(None, 8))
 
         ttk.Label(controls, text="Speed Legend:").pack(anchor="w", pady=(6, 4))
         spd_legend = tk.Canvas(controls, width=140, height=30,
-                            bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+                               bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         spd_legend.pack(pady=(2, 6))
 
         # Draw horizontal gradient (0 kt → 600 kt)
@@ -310,7 +319,8 @@ class ADSBRadarApp:
 
         # Tick labels
         spd_legend.create_text(5, 15, anchor="w", text="0 kt", font=(None, 8))
-        spd_legend.create_text(135, 15, anchor="e", text="600 kt", font=(None, 8))
+        spd_legend.create_text(135, 15, anchor="e",
+                               text="600 kt", font=(None, 8))
 
         ttk.Label(controls, text="Dump1090 Status:").pack(
             anchor="w", pady=(6, 0))
@@ -370,6 +380,14 @@ class ADSBRadarApp:
             time.sleep(1.0)
 
     # ------------------- GUI helpers -------------------
+    def on_canvas_resize(self, event):
+        # update current canvas size
+        self.canvas_width = event.width
+        self.canvas_height = event.height
+
+        # redraw radar background when canvas changes
+        self.draw_background()
+
     def schedule_update(self):
         if not self.running:
             return
@@ -400,10 +418,10 @@ class ADSBRadarApp:
         angle_rad = math.radians(brg)
         x_km = dkm * math.sin(angle_rad)
         y_km = dkm * math.cos(angle_rad)
-        x_pix = CANVAS_SIZE/2 + x_km * \
-            (CANVAS_SIZE/2.0) / (self.max_range.get() * self.zoom.get())
-        y_pix = CANVAS_SIZE/2 - y_km * \
-            (CANVAS_SIZE/2.0) / (self.max_range.get() * self.zoom.get())
+        x_pix = self.canvas_width/2 + x_km * \
+            (self.canvas_width/2.0) / (self.max_range.get() * self.zoom.get())
+        y_pix = self.canvas_height/2 - y_km * \
+            (self.canvas_height/2.0) / (self.max_range.get() * self.zoom.get())
         return x_pix, y_pix, dkm, brg
 
     def get_icon(self, base_img, color_hex, heading, size=48):
@@ -437,8 +455,8 @@ class ADSBRadarApp:
     # ------------------- Radar rendering -------------------
     def draw_background(self):
         self.canvas.delete("bg")
-        cx = CANVAS_SIZE//2
-        cy = CANVAS_SIZE//2
+        cx = self.canvas_width//2
+        cy = self.canvas_height//2
         for i in range(1, 5):
             r_pix = self.km_to_pixels(self.max_range.get() * i / 4)
             self.canvas.create_oval(
