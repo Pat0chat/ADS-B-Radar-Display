@@ -7,8 +7,8 @@ Features:
     - Real bearing and position of detected planes
     - Symbols colored by altitude (gradient)
     - History trails per aircraft
-        - Tkinter GUI controls
-- Click any aircraft icon to open a details popup with full info
+    - Tkinter GUI controls
+    - Click any aircraft icon to open a details popup with full info
 
 Dependencies:
     - requests
@@ -133,10 +133,6 @@ def make_plane_image(size=48, fill="#ffffff", outline="#000000"):
         (cx - 0.18 * scale, cy - 0.15 * scale),
     ]
     draw.polygon(pts, fill=fill, outline=outline)
-    # add cockpit window
-    r = int(size * 0.06)
-    draw.ellipse((cx - r, cy - scale * 0.6 - r, cx + r,
-                 cy - scale * 0.6 + r), fill=(0, 0, 0, 150))
     return img
 
 # ------------------- Main Application -------------------
@@ -189,7 +185,9 @@ class ADSBRadarApp:
         ttk.Button(controls, text="Center to current vars",
                    command=self.draw_background).pack(fill="x", pady=(6, 0))
         ttk.Button(controls, text="Refresh now",
-                   command=self.refresh_now).pack(fill="x", pady=(6, 4))
+                   command=self.refresh_now).pack(fill="x", pady=(6, 0))
+        ttk.Button(controls, text='Clear Trails',
+                   command=self.clear_trails).pack(fill='x', pady=(6, 0))
 
         ttk.Label(controls, text="Altitude Legend:").pack(
             anchor="w", pady=(6, 0))
@@ -276,6 +274,10 @@ class ADSBRadarApp:
 
     def refresh_now(self):
         self.update_frame()
+
+    def clear_trails(self):
+        self.aircraft_trails.clear()
+        self.canvas.delete('trails')
 
     def km_to_pixels(self, km):
         # converts kilometers (on display) to canvas pixels based on max_range and zoom
@@ -467,7 +469,7 @@ class ADSBRadarApp:
                 label = callsign or reg or hexid
                 lab_txt = f"{label}\n{int(dkm)} km {altitude or '?'} ft"
                 self.canvas.create_text(
-                    x + 22, y + 22, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
+                    x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
 
         for h in list(self.aircraft_trails.keys()):
             if h not in seen_hexes:
@@ -483,37 +485,72 @@ class ADSBRadarApp:
                 self.show_aircraft_popup(self.aircraft_items[it])
                 return
 
-    def show_aircraft_popup(self, ac):
+    def show_aircraft_popup(self, ac_initial):
+        """Open a popup for an aircraft and keep updating its info."""
+        hexid = ac_initial["hex"]
+
         win = tk.Toplevel(self.root)
-        title = ac.get("callsign") or ac.get("hex") or "Aircraft"
+        title = ac_initial.get("callsign") or hexid or "Aircraft"
         win.title(f"Aircraft — {title}")
         win.geometry("360x260")
+
         frm = ttk.Frame(win, padding=8)
         frm.pack(fill="both", expand=True)
 
-        # Build a read-only multi-line description
         txt = tk.Text(frm, width=44, height=10, wrap="word")
         txt.pack(fill="both", expand=True)
-        lines = [
-            f"Hex: {ac.get('hex')}",
-            f"Callsign: {ac.get('callsign')}",
-            f"Registration: {ac.get('registration')}",
-            f"Latitude: {ac.get('lat'):.6f}",
-            f"Longitude: {ac.get('lon'):.6f}",
-            f"Altitude: {ac.get('altitude_ft') or '?'} ft",
-            f"Distance: {ac.get('distance_km')} km",
-            f"Bearing: {ac.get('bearing_deg')}°",
-            f"Track: {ac.get('track_deg')}°" if ac.get(
-                'track_deg') is not None else "",
-            f"Speed: {ac.get('speed')}" if ac.get('speed') else "",
-            f"Last seen: {ac.get('last_seen')}"
-        ]
-        txt.insert("1.0", "\n".join([l for l in lines if l]))
-        txt.configure(state="disabled")
+
         btn_frame = ttk.Frame(frm)
         btn_frame.pack(fill="x", pady=(6, 0))
-        ttk.Button(btn_frame, text="Close",
-                   command=win.destroy).pack(side="right")
+        ttk.Button(btn_frame, text="Close", command=win.destroy).pack(side="right")
+
+        def refresh_popup():
+            """Refresh popup every second with latest info."""
+            # If window was closed, stop refresh
+            if not win.winfo_exists():
+                return
+
+            # Find latest data for this aircraft
+            latest = None
+            for item in self.aircraft_items.values():
+                if item["hex"] == hexid:
+                    latest = item
+                    break
+
+            # If aircraft gone → close popup
+            if latest is None:
+                txt.configure(state="normal")
+                txt.delete("1.0", "end")
+                txt.insert("1.0", "Aircraft no longer in range.")
+                txt.configure(state="disabled")
+                return
+
+            # Build updated text
+            lines = [
+                f"Hex: {latest.get('hex')}",
+                f"Callsign: {latest.get('callsign')}",
+                f"Registration: {latest.get('registration')}",
+                f"Latitude: {latest.get('lat'):.6f}",
+                f"Longitude: {latest.get('lon'):.6f}",
+                f"Altitude: {latest.get('altitude_ft')} ft",
+                f"Distance: {latest.get('distance_km')} km",
+                f"Bearing: {latest.get('bearing_deg')}°",
+                f"Track: {latest.get('track_deg')}°",
+                f"Speed: {latest.get('speed')}",
+                f"Last seen: {latest.get('last_seen')}",
+            ]
+
+            txt.configure(state="normal")
+            txt.delete("1.0", "end")
+            txt.insert("1.0", "\n".join([l for l in lines if l]))
+            txt.configure(state="disabled")
+
+            # Schedule next refresh
+            win.after(1000, refresh_popup)
+
+        # Start updating loop
+        refresh_popup()
+
 
     # ------------------- Cleanup -------------------
     def stop(self):
