@@ -1,0 +1,9 @@
+{
+    "host": "0.0.0.0",
+    "port": 8080,
+    "default_num_aircraft": 10,
+    "default_update_interval": 1,
+    "default_radius_km": 10,
+    "center_lat": 48.6833,
+    "center_lon": 2.1333
+}

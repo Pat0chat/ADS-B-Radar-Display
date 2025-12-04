@@ -1,13 +1,13 @@
 #!/bin/bash
 
 ###########################################
-# ADS-B Radar Launcher
+# ADS-B Dump1090 Radar Launcher
 ###########################################
 
 # --- CONFIG ---
 
 # Paths
-RADAR_SCRIPT_PATH="./radar_adsb_tk.py"
+RADAR_SCRIPT_PATH="./radar/radar_adsb_tk.py"
 DUMP_CMD="./dump1090/dump1090 --net --interactive"
 LOGFILE="radar.log"
 

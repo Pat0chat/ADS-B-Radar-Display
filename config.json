@@ -1,9 +1,0 @@
-{
-    "dump1090_url": "http://localhost:8080/data.json",
-    "radar_range": 200,
-    "radar_history": 50,
-    "display_fps": 25,
-    "display_smooth": 0.50,
-    "station_lat": 46.6833,
-    "station_lon": 2.1333
-}
