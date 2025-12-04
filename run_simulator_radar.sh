@@ -1,14 +1,14 @@
 #!/bin/bash
 
 ###########################################
-# ADS-B Simulator Radar Launcher
+# ADS-B Simulator and Radar Launcher
 ###########################################
 
 # --- CONFIG ---
 
 # Paths
 RADAR_SCRIPT_PATH="./radar/radar_adsb_tk.py"
-SIMULATOR_SCRIPT_PATH="./radar/radar_adsb_tk.py"
+SIMULATOR_SCRIPT_PATH="./simulator/main.py"
 LOGFILE="radar.log"
 
 echo "----------------------------------------" | tee -a "$LOGFILE"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ###########################################
-# ADS-B Dump1090 Radar Launcher
+# ADS-B Dump1090 and Radar Launcher
 ###########################################
 
 # --- CONFIG ---

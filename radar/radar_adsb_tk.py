@@ -401,7 +401,7 @@ class ADSBRadarApp:
         self.aircraft_trails.clear()
         self.canvas.delete('trails')
 
-    def km_to_pixels(self, km):
+    def km_to_pixels(self, km): #TODO change because of fullscreen !!
         # converts kilometers (on display) to canvas pixels based on max_range and zoom
         px_per_radius = (CANVAS_SIZE/2.0) / \
             (self.max_range.get() * self.zoom.get())
