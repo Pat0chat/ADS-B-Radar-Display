@@ -41,7 +41,7 @@ REFRESH_MS = 1000     # update interval in milliseconds
 MAX_RANGE_KM = 200    # maximum radar range shown (km)
 CANVAS_SIZE = 800     # pixels (square canvas)
 TRAIL_MAX = 100       # default number of points in trail
-
+PLOT_SIZE = 32        # default size for detected object in radar view
 
 # ------------------- Utilities -------------------
 
@@ -84,7 +84,10 @@ def bearing_deg(lat1, lon1, lat2, lon2):
 def altitude_to_color(alt):
     """
     Map altitude (feet) to an RGB color string.
-    Low alt -> green, medium -> yellow, high -> red, unknown -> gray.
+    Low alt -> green
+    medium -> yellow
+    high -> red
+    unknown -> gray
     """
     if alt is None:
         return "#888888"
@@ -106,33 +109,121 @@ def altitude_to_color(alt):
         b = 0
     return f"#{r:02x}{g:02x}{b:02x}"
 
+
+def speed_to_color(speed):
+    """
+    Map speed (knots) to a distinct RGB color scale.
+    Palette is different from altitude_to_color:
+    Slow -> Blue
+    Moderate -> Cyan
+    Fast -> Green
+    Very fast -> Orange
+    Extremely fast -> Red
+    """
+
+    if speed is None:
+        return "#8888ff"    # unknown = bluish
+
+    # Clamp speed to reasonable range
+    if speed < 0:
+        speed = 0
+    if speed > 600:
+        speed = 600
+
+    # Normalize 0–600 kt → 0.0–1.0
+    t = speed / 600.0
+
+    # Segmented gradient:
+    # 0.0–0.25: Blue → Cyan
+    # 0.25–0.50: Cyan → Green
+    # 0.50–0.75: Green → Orange
+    # 0.75–1.00: Orange → Red
+
+    if t < 0.25:
+        # Blue (0,0,255) -> Cyan (0,255,255)
+        f = t / 0.25
+        r = 0
+        g = int(255 * f)
+        b = 255
+
+    elif t < 0.50:
+        # Cyan (0,255,255) -> Green (0,255,0)
+        f = (t - 0.25) / 0.25
+        r = 0
+        g = 255
+        b = int(255 * (1 - f))
+
+    elif t < 0.75:
+        # Green (0,255,0) -> Orange (255,165,0)
+        f = (t - 0.50) / 0.25
+        r = int(255 * f)
+        g = int(255 - (90 * f))   # 255 → 165
+        b = 0
+
+    else:
+        # Orange (255,165,0) -> Red (255,0,0)
+        f = (t - 0.75) / 0.25
+        r = 255
+        g = int(165 * (1 - f))
+        b = 0
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
 # ------------------- Plane icon generator -------------------
 
 
-def make_plane_image(size=48, fill="#ffffff", outline="#000000"):
-    """
-    Return a PIL Image of a simple plane silhouette pointing up (0 deg).
-    We'll draw a stylized aircraft and later rotate it for heading.
-    """
+def make_mil_triangle(size=32, fill="#ffffff", outline="#000000"):
+    """MIL-STD 2525 style fixed-wing triangle symbol (point up)."""
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    cx = size / 2
-    cy = size / 2
-    scale = size / 2.6
-    # Define polygon relative to center, pointing upward
+    cx, cy = size/2, size/2
+    s = size/2.1
     pts = [
-        (cx, cy - 1.0 * scale),  # nose
-        (cx + 0.18 * scale, cy - 0.15 * scale),
-        (cx + 0.45 * scale, cy - 0.1 * scale),
-        (cx + 0.2 * scale, cy + 0.4 * scale),
-        (cx + 0.05 * scale, cy + 0.45 * scale),
-        (cx, cy + 0.25 * scale),
-        (cx - 0.05 * scale, cy + 0.45 * scale),
-        (cx - 0.2 * scale, cy + 0.4 * scale),
-        (cx - 0.45 * scale, cy - 0.1 * scale),
-        (cx - 0.18 * scale, cy - 0.15 * scale),
+        (cx, cy - s),        # Nose
+        (cx + s*0.85, cy + s*0.75),
+        (cx - s*0.85, cy + s*0.75),
     ]
-    draw.polygon(pts, fill=fill, outline=outline)
+    draw.polygon(pts, fill=fill, outline=outline, width=2)
+    return img
+
+
+def make_mil_helicopter(size=32, fill="#ffffff", outline="#000000"):
+    """Simple MIL-style helicopter icon."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    cx, cy = size/2, size/2
+    s = size/2
+
+    # body
+    draw.ellipse((cx-s*0.3, cy-s*0.3, cx+s*0.3, cy+s*0.3),
+                 fill=fill, outline=outline, width=2)
+
+    # rotor bar
+    draw.line([(cx - s*0.9, cy - s*0.8),
+               (cx + s*0.9, cy - s*0.8)],
+              fill=outline, width=3)
+
+    # tail boom
+    draw.line([(cx, cy + s*0.3),
+               (cx, cy + s*1.2)],
+              fill=outline, width=2)
+
+    return img
+
+
+def make_mil_unknown(size=32, fill="#ffffff", outline="#000000"):
+    """Generic 'unknown' diamond symbol."""
+    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    cx, cy = size/2, size/2
+    s = size/2
+    pts = [
+        (cx,     cy - s),
+        (cx + s, cy),
+        (cx,     cy + s),
+        (cx - s, cy),
+    ]
+    draw.polygon(pts, fill=fill, outline=outline, width=2)
     return img
 
 # ------------------- Main Application -------------------
@@ -189,28 +280,37 @@ class ADSBRadarApp:
         ttk.Button(controls, text='Clear Trails',
                    command=self.clear_trails).pack(fill='x', pady=(6, 0))
 
-        ttk.Label(controls, text="Altitude Legend:").pack(
-            anchor="w", pady=(6, 0))
-        legend_canvas = tk.Canvas(controls, width=120, height=70,
-                                  bg="#ffffff", highlightthickness=1, highlightbackground="#000")
-        legend_canvas.pack(pady=(2, 6))
+        ttk.Label(controls, text="Altitude Legend:").pack(anchor="w", pady=(6, 0))
 
-        # Draw rectangles for altitude ranges
-        altitudes = [0, 10000, 20000, 30000, 40000]  # in feet
-        for i in range(len(altitudes)-1):
-            y0 = 10 + i*12
-            y1 = y0 + 12
-            color = altitude_to_color((altitudes[i] + altitudes[i+1]) / 2)
-            legend_canvas.create_rectangle(
-                8, y0, 40, y1, fill=color, outline="#000")
-            legend_canvas.create_text(
-                44, (y0+y1)/2, anchor="w", text=f"{altitudes[i]}-{altitudes[i+1]} ft", font=(None, 8))
+        alt_legend = tk.Canvas(controls, width=140, height=30,
+                            bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+        alt_legend.pack(pady=(2, 6))
 
-        ttk.Label(controls, text="Highest Altitude Visible:").pack(
-            anchor="w", pady=(6, 0))
-        self.highest_alt_label = ttk.Label(
-            controls, text="N/A", background="#888888", foreground="#ffffff", width=15)
-        self.highest_alt_label.pack(anchor="w", pady=(0, 6))
+        # Draw horizontal gradient (0 ft → 40,000 ft)
+        for x in range(140):
+            # map x (0–139) to altitude (0–40000)
+            alt = (x / 139) * 40000
+            c = altitude_to_color(alt)
+            alt_legend.create_line(x, 0, x, 30, fill=c)
+
+        # Tick labels
+        alt_legend.create_text(5, 15, anchor="w", text="0 ft", font=(None, 8))
+        alt_legend.create_text(135, 15, anchor="e", text="40,000 ft", font=(None, 8))
+
+        ttk.Label(controls, text="Speed Legend:").pack(anchor="w", pady=(6, 4))
+        spd_legend = tk.Canvas(controls, width=140, height=30,
+                            bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+        spd_legend.pack(pady=(2, 6))
+
+        # Draw horizontal gradient (0 kt → 600 kt)
+        for x in range(140):
+            spd = (x / 139) * 600
+            c = speed_to_color(spd)
+            spd_legend.create_line(x, 0, x, 30, fill=c)
+
+        # Tick labels
+        spd_legend.create_text(5, 15, anchor="w", text="0 kt", font=(None, 8))
+        spd_legend.create_text(135, 15, anchor="e", text="600 kt", font=(None, 8))
 
         ttk.Label(controls, text="Dump1090 Status:").pack(
             anchor="w", pady=(6, 0))
@@ -232,8 +332,12 @@ class ADSBRadarApp:
         # State
         self.aircraft_trails = {}  # hex -> deque of (x,y,alt)
         self.aircraft_icons = {}
-        self.plane_base_img = make_plane_image(
-            size=64, fill="#ffffff", outline="#585858FF")
+        self.symbol_fixedwing = make_mil_triangle(
+            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
+        self.symbol_helicopter = make_mil_helicopter(
+            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
+        self.symbol_unknown = make_mil_unknown(
+            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
         self.aircraft_items = {}
         self.latest_data = []
         self.data_lock = threading.Lock()
@@ -302,29 +406,30 @@ class ADSBRadarApp:
             (CANVAS_SIZE/2.0) / (self.max_range.get() * self.zoom.get())
         return x_pix, y_pix, dkm, brg
 
-    def get_icon(self, color_hex, heading, size=48):
-        # round heading to 5 degrees to limit cache
+    def get_icon(self, base_img, color_hex, heading, size=48):
         heading_r = int(round(heading / 5.0) * 5) % 360
         key = (color_hex, heading_r, size)
         if key in self.aircraft_icons:
             return self.aircraft_icons[key]
 
-        # produce a colored plane silhouette by tinting base image
-        base = self.plane_base_img.resize((size, size), resample=Image.LANCZOS)
+        # white template icon
+        base = base_img
 
-        # colorize: multiply white silhouette by color
-        color_rgb = tuple(int(color_hex[i:i+2], 16) for i in (1, 3, 5))
-        colored = Image.new("RGBA", base.size)
+        # convert hex to RGB tuple
+        R = int(color_hex[1:3], 16)
+        G = int(color_hex[3:5], 16)
+        B = int(color_hex[5:7], 16)
+
+        # tint the white plane
+        colored = Image.new("RGBA", base.size, (R, G, B, 255))
         mask = base.split()[3]
-        solid = Image.new("RGBA", base.size, color_rgb + (0,))
-        colored.paste(solid, (0, 0), mask=mask)
+        colored.putalpha(mask)
 
-        # overlay outline in black
-        colored = Image.alpha_composite(colored, base)
-
-        # rotate so that heading 0 points north -> our plane base points up so rotate by heading
+        # rotate final colored icon
         rotated = colored.rotate(
-            heading_r, resample=Image.BICUBIC, expand=True)
+            heading_r, expand=True, resample=Image.BICUBIC)
+
+        # cache final icon
         photo = ImageTk.PhotoImage(rotated)
         self.aircraft_icons[key] = photo
         return photo
@@ -374,7 +479,6 @@ class ADSBRadarApp:
         seen_hexes = set()
 
         # process aircraft
-        highest_alt = None
         for ac in data:
             if not (ac.get("lat") and ac.get("lon")):
                 continue
@@ -386,27 +490,16 @@ class ADSBRadarApp:
             # dump1090 fields may vary; try several
             altitude = ac.get("altitude") or ac.get(
                 "alt_baro") or ac.get("alt_geom") or ac.get("alt")
-            if altitude is not None:
-                if highest_alt is None or altitude > highest_alt:
-                    highest_alt = altitude
-
-            # update the label
-            if highest_alt is not None:
-                color = altitude_to_color(highest_alt)
-                self.highest_alt_label.configure(
-                    text=f"{int(highest_alt)} ft", background=color)
-            else:
-                self.highest_alt_label.configure(
-                    text="N/A", background="#888888")
 
             track = ac.get("track") if ac.get(
                 "track") is not None else (ac.get("heading") or 0)
             callsign = ac.get("flight") or ac.get("callsign") or ""
             reg = ac.get("reg") or ac.get("registration") or ""
 
-            # attempt to extract speed (kts)
+            # attempt to extract speed (kts) and vertical speed (fpm)
             speed = ac.get("speed") or ac.get(
                 "groundspeed") or ac.get("gs") or ac.get("spd")
+            vertical_rate = ac.get("vert_rate") or 0
 
             x, y, dkm, brg = self.geo_to_canvas(lat, lon)
 
@@ -445,15 +538,51 @@ class ADSBRadarApp:
                         ax, ay, bx, by, fill=fade_color, width=width, tags=("trails",))
 
             # draw aircraft icon
-            color = altitude_to_color(altitude)
-            icon = self.get_icon(color, track, size=40)
+            category = ac.get("category") or ""
+            category = category.upper()
+
+            base = None
+            if category.startswith("A"):     # Fixed-wing
+                base = self.symbol_fixedwing
+            elif category.startswith("B"):   # Rotorcraft
+                base = self.symbol_helicopter
+            else:
+                base = self.symbol_unknown
+            icon = self.get_icon(base, "#ffffff", track, size=40)
+
             # Place image centered
             img_id = self.canvas.create_image(
                 x, y, image=icon, tags=("aircraft",))
+
+            # Heading / speed vector
+            base_len = 10
+            spd = (speed or 0)
+
+            # speed extends line slightly
+            vector_len = base_len + spd * 0.07
+
+            vect_speed_color = speed_to_color(spd)
+
+            angle_rad = math.radians(track)
+
+            x2 = x + vector_len * math.sin(angle_rad)
+            y2 = y - vector_len * math.cos(angle_rad)
+
+            self.canvas.create_line(
+                x, y, x2, y2,
+                fill=vect_speed_color,
+                width=1,
+                arrow=tk.LAST,
+                arrowshape=(8, 10, 4),
+                tags=("aircraft",)
+            )
+
+            # Store data
             self.aircraft_items[img_id] = {
                 "hex": hexid,
                 "callsign": callsign,
                 "registration": reg,
+                "category": category,
                 "lat": lat,
                 "lon": lon,
                 "altitude_ft": altitude,
@@ -461,10 +590,11 @@ class ADSBRadarApp:
                 "distance_km": round(dkm, 2),
                 "bearing_deg": round(brg, 1),
                 "speed": speed,
+                "vert_rate": vertical_rate,
                 "last_seen": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             }
 
-            # attach label (as separate canvas items but tagged 'aircraft' too)
+            # Attach label (as separate canvas items but tagged 'aircraft' too)
             if self.show_labels.get():
                 label = callsign or reg or hexid
                 lab_txt = f"{label}\n{int(dkm)} km {altitude or '?'} ft"
@@ -502,7 +632,8 @@ class ADSBRadarApp:
 
         btn_frame = ttk.Frame(frm)
         btn_frame.pack(fill="x", pady=(6, 0))
-        ttk.Button(btn_frame, text="Close", command=win.destroy).pack(side="right")
+        ttk.Button(btn_frame, text="Close",
+                   command=win.destroy).pack(side="right")
 
         def refresh_popup():
             """Refresh popup every second with latest info."""
@@ -530,13 +661,15 @@ class ADSBRadarApp:
                 f"Hex: {latest.get('hex')}",
                 f"Callsign: {latest.get('callsign')}",
                 f"Registration: {latest.get('registration')}",
+                f"Category: {latest.get('category')}",
                 f"Latitude: {latest.get('lat'):.6f}",
                 f"Longitude: {latest.get('lon'):.6f}",
                 f"Altitude: {latest.get('altitude_ft')} ft",
                 f"Distance: {latest.get('distance_km')} km",
                 f"Bearing: {latest.get('bearing_deg')}°",
                 f"Track: {latest.get('track_deg')}°",
-                f"Speed: {latest.get('speed')}",
+                f"Speed: {latest.get('speed')} kts",
+                f"Vertical speed: {latest.get('vert_rate')} fpm",
                 f"Last seen: {latest.get('last_seen')}",
             ]
 
@@ -551,8 +684,8 @@ class ADSBRadarApp:
         # Start updating loop
         refresh_popup()
 
-
     # ------------------- Cleanup -------------------
+
     def stop(self):
         self.running = False
 
@@ -578,6 +711,8 @@ if __name__ == "__main__":
             CANVAS_SIZE = int(cfg["canvas_size"])
         if "trail_max" in cfg:
             TRAIL_MAX = int(cfg["trail_max"])
+        if "plot_size" in cfg:
+            PLOT_SIZE = int(cfg["plot_size"])
 
         print("[ADS-B Radar] **** Setup ****")
         print("[ADS-B Radar] Dump1090 URL: " + DATA_URL)
@@ -587,6 +722,7 @@ if __name__ == "__main__":
         print("[ADS-B Radar] Max range (km): " + str(MAX_RANGE_KM))
         print("[ADS-B Radar] Canvas size: " + str(CANVAS_SIZE))
         print("[ADS-B Radar] Trail max: " + str(TRAIL_MAX))
+        print("[ADS-B Radar] Plot size: " + str(PLOT_SIZE))
         print("[ADS-B Radar] ****")
 
         root = tk.Tk()

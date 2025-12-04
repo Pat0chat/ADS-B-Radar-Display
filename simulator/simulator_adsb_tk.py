@@ -82,6 +82,13 @@ def destination_point(lat_deg, lon_deg, bearing_deg, distance_km):
 def km_from_knots(kts):
     return kts * 1.852 / 3600.0
 
+def gen_category():
+    return random.choice([
+        "A",   # fixed-wing
+        "B",   # rotorcraft
+        "C",   # gliders/balloons
+        "D"   # UAV / special
+    ])
 
 def gen_hex():
     return "".join(random.choice("0123456789abcdef") for _ in range(6))
@@ -109,6 +116,7 @@ class Aircraft:
         self.hex = gen_hex()
         self.flight = gen_callsign()
         self.reg = gen_reg()
+        self.category = gen_category()
 
         self.track = random.uniform(0, 360)
         self.speed = random.uniform(150, 480)
@@ -131,9 +139,10 @@ class Aircraft:
 
         if time.time() - self._last_behavior > random.uniform(10, 25):
             self.turn_rate = random.uniform(-4, 4)
-            self.speed = max(
-                150, min(500, self.speed + random.uniform(-40, 40)))
-            self.vspeed = random.uniform(-1800, 1800)
+            self.speed = max(150, min(500, self.speed + random.uniform(-40, 40)))
+            # Smooth vertical rate change
+            delta_vs = random.uniform(-600, 600)
+            self.vspeed = max(-2500, min(2500, self.vspeed + delta_vs))
             self._last_behavior = time.time()
 
     def to_json(self):
@@ -141,11 +150,13 @@ class Aircraft:
             "hex": self.hex,
             "flight": self.flight,
             "reg": self.reg,
+            "category": self.category,
             "lat": round(self.lat, 5),
             "lon": round(self.lon, 5),
             "altitude": int(self.altitude),
             "track": round(self.track, 1),
             "speed": int(self.speed),
+            "vert_rate": int(self.vspeed),
             "seen": int(time.time()),
         }
 
