@@ -237,7 +237,6 @@ class ADSBRadarApp:
         self.center_lat = tk.DoubleVar(value=RADAR_LAT)
         self.center_lon = tk.DoubleVar(value=RADAR_LON)
         self.max_range = tk.DoubleVar(value=MAX_RANGE_KM)
-        self.zoom = tk.DoubleVar(value=1.0)  # scale multiplier
         self.trail_length = tk.IntVar(value=TRAIL_MAX)
         self.paused = tk.BooleanVar(value=False)
         self.show_labels = tk.BooleanVar(value=True)
@@ -258,21 +257,19 @@ class ADSBRadarApp:
         controls = ttk.Frame(root, padding=(6, 6))
         controls.grid(row=0, column=1, sticky="ns")
 
+        ttk.Button(controls, text="Show data table", command=self.show_raw_table).pack(fill="x", pady=(8, 4))
+
         ttk.Label(controls, text="Center Latitude:").pack(anchor="w")
         ttk.Entry(controls, textvariable=self.center_lat).pack(fill="x")
         ttk.Label(controls, text="Center Longitude:").pack(anchor="w")
         ttk.Entry(controls, textvariable=self.center_lon).pack(fill="x")
 
         ttk.Label(controls, text="Range (km):").pack(anchor="w", pady=(6, 0))
-        ttk.Scale(controls, from_=50, to=500, variable=self.max_range,
-                  orient="horizontal").pack(fill="x")
-
-        ttk.Label(controls, text="Zoom: ").pack(anchor="w", pady=(6, 0))
-        ttk.Scale(controls, from_=0.2, to=3.0, variable=self.zoom,
+        ttk.Scale(controls, from_=10, to=500, variable=self.max_range,
                   orient="horizontal").pack(fill="x")
 
         ttk.Label(controls, text="Trail length:").pack(anchor="w", pady=(6, 0))
-        ttk.Scale(controls, from_=0, to=100, variable=self.trail_length,
+        ttk.Scale(controls, from_=0, to=200, variable=self.trail_length,
                   orient="horizontal").pack(fill="x")
 
         ttk.Checkbutton(controls, text="Show labels", variable=self.show_labels).pack(
@@ -394,6 +391,80 @@ class ADSBRadarApp:
         self.update_frame()
         self.root.after(REFRESH_MS, self.schedule_update)
 
+    def show_raw_table(self):
+        win = tk.Toplevel(self.root)
+        win.title("Data Table")
+        win.geometry("1000x500")
+
+        frame = ttk.Frame(win)
+        frame.pack(fill="both", expand=True)
+
+        # Scrollbars
+        xscroll = ttk.Scrollbar(frame, orient="horizontal")
+        yscroll = ttk.Scrollbar(frame, orient="vertical")
+
+        columns = [
+            "hex", "callsign", "registration", "lat", "lon",
+            "altitude", "speed", "track", "vert_rate", 
+            "category", "type", "squawk", "last_seen"
+        ]
+
+        tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            yscrollcommand=yscroll.set,
+            xscrollcommand=xscroll.set
+        )
+
+        # Attach scrollbars
+        yscroll.config(command=tree.yview)
+        xscroll.config(command=tree.xview)
+
+        yscroll.pack(side="right", fill="y")
+        xscroll.pack(side="bottom", fill="x")
+        tree.pack(fill="both", expand=True)
+
+        # Configure column headings
+        for col in columns:
+            tree.heading(col, text=col.replace("_", " ").title())
+            tree.column(col, width=80, anchor="center")
+
+        # ---- REFRESH FUNCTION ----
+        def refresh():
+            if not win.winfo_exists():
+                return
+
+            # Clear old rows
+            for row in tree.get_children():
+                tree.delete(row)
+
+            # Insert new rows from dump1090
+            with self.data_lock:
+                data = self.latest_data.copy()
+
+            for ac in data:
+                row = (
+                    ac.get("hex") or ac.get("icao24") or "",
+                    ac.get("flight") or ac.get("callsign") or "",
+                    ac.get("registration") or ac.get("reg") or "",
+                    ac.get("lat") or "",
+                    ac.get("lon") or "",
+                    ac.get("altitude") or ac.get("alt_baro") or ac.get("alt_geom") or "",
+                    ac.get("speed") or ac.get("groundspeed") or "",
+                    ac.get("track") or ac.get("heading") or "",
+                    ac.get("vert_rate") or "",
+                    ac.get("category") or "",
+                    ac.get("type") or "",
+                    ac.get("squawk") or "",
+                    ac.get("seen") or ac.get("last_seen") or "",
+                )
+                tree.insert("", "end", values=row)
+
+            win.after(1000, refresh)   # update every second
+
+        refresh()
+
     def refresh_now(self):
         self.update_frame()
 
@@ -402,27 +473,28 @@ class ADSBRadarApp:
         self.canvas.delete('trails')
 
     def km_to_pixels(self, km): #TODO change because of fullscreen !!
-        # converts kilometers (on display) to canvas pixels based on max_range and zoom
-        px_per_radius = (CANVAS_SIZE/2.0) / \
-            (self.max_range.get() * self.zoom.get())
-        return km * px_per_radius
+        # converts kilometers (on display) to canvas pixels based on max_range
+        # Use the largest possible radius that fits in the resized canvas
+        radius_px = min(self.canvas_width, self.canvas_height) / 2.0
+        effective_range = self.max_range.get()
+        px_per_km = radius_px / effective_range
+        return km * px_per_km
 
     def geo_to_canvas(self, lat, lon):
         # compute distance and bearing, then convert to canvas coords
-        dkm = haversine_km(self.center_lat.get(),
-                           self.center_lon.get(), lat, lon)
-        brg = bearing_deg(self.center_lat.get(),
-                          self.center_lon.get(), lat, lon)
-
+        dkm = haversine_km(self.center_lat.get(), self.center_lon.get(), lat, lon)
+        brg = bearing_deg(self.center_lat.get(), self.center_lon.get(), lat, lon)
+        
         # polar to cartesian: we use angle where 0=North, 90=East
         angle_rad = math.radians(brg)
-        x_km = dkm * math.sin(angle_rad)
-        y_km = dkm * math.cos(angle_rad)
-        x_pix = self.canvas_width/2 + x_km * \
-            (self.canvas_width/2.0) / (self.max_range.get() * self.zoom.get())
-        y_pix = self.canvas_height/2 - y_km * \
-            (self.canvas_height/2.0) / (self.max_range.get() * self.zoom.get())
-        return x_pix, y_pix, dkm, brg
+
+        # Convert km to px only using km_to_pixels()
+        dist_px = self.km_to_pixels(dkm)
+
+        x = self.canvas_width/2  + dist_px * math.sin(angle_rad)
+        y = self.canvas_height/2 - dist_px * math.cos(angle_rad)
+
+        return x, y, dkm, brg
 
     def get_icon(self, base_img, color_hex, heading, size=48):
         heading_r = int(round(heading / 5.0) * 5) % 360
@@ -455,16 +527,87 @@ class ADSBRadarApp:
     # ------------------- Radar rendering -------------------
     def draw_background(self):
         self.canvas.delete("bg")
-        cx = self.canvas_width//2
-        cy = self.canvas_height//2
+
+        cx = self.canvas_width // 2
+        cy = self.canvas_height // 2
+
+        # Use shortest canvas dimension for round radar
+        radius_px = min(self.canvas_width, self.canvas_height) / 2.0
+
+        # ----- RANGE RINGS -----
         for i in range(1, 5):
-            r_pix = self.km_to_pixels(self.max_range.get() * i / 4)
+            r = radius_px * (i / 4)
             self.canvas.create_oval(
-                cx-r_pix, cy-r_pix, cx+r_pix, cy+r_pix, outline="#2b6d6b", dash=(3, 5), tags=("bg",))
-            self.canvas.create_text(cx+5, cy-r_pix+10, anchor="nw", text=f"{int(self.max_range.get()*i/4)} km",
-                                    fill="#9be3dc", font=(None, 8), tags=("bg",))
-        self.canvas.create_text(cx, 10, text="N", fill="#9be3dc", font=(
-            None, 12, "bold"), tags=("bg",))
+                cx - r, cy - r, cx + r, cy + r,
+                outline="#2b6d6b", dash=(3, 6),
+                tags=("bg",)
+            )
+
+            # Range label
+            km = int(self.max_range.get() * i / 4)
+            self.canvas.create_text(
+                cx + 5,
+                cy - r + 10,
+                anchor="nw",
+                text=f"{km} km",
+                fill="#9be3dc",
+                font=(None, 8),
+                tags=("bg",)
+            )
+
+        # ----- CENTER MARKER -----
+        self.canvas.create_oval(
+            cx - 6, cy - 6, cx + 6, cy + 6,
+            outline="#00ffaa",
+            width=2,
+            tags=("bg",)
+        )
+        self.canvas.create_oval(
+            cx - 2, cy - 2, cx + 2, cy + 2,
+            fill="#00ffaa",
+            outline="",
+            tags=("bg",)
+        )
+
+        # ----- HEADING ROSE -----
+        for deg in range(0, 360, 10):
+            angle = math.radians(deg)
+            sin_a = math.sin(angle)
+            cos_a = math.cos(angle)
+
+            # Minor ticks (10°)
+            r0 = radius_px * 0.97
+            r1 = radius_px
+
+            # Major ticks (every 30°)
+            if deg % 30 == 0:
+                r0 = radius_px * 0.93
+
+            x0 = cx + r0 * sin_a
+            y0 = cy - r0 * cos_a
+            x1 = cx + r1 * sin_a
+            y1 = cy - r1 * cos_a
+
+            self.canvas.create_line(
+                x0, y0, x1, y1,
+                fill="#3dd6c6" if deg % 30 == 0 else "#1a9494",
+                width=2 if deg % 30 == 0 else 1,
+                tags=("bg",)
+            )
+
+            # Cardinal letters (N/E/S/W)
+            if deg in (0, 90, 180, 270):
+                lx = cx + (radius_px * 0.82) * sin_a
+                ly = cy - (radius_px * 0.82) * cos_a
+                letter = {0:"N", 90:"E", 180:"S", 270:"W"}[deg]
+
+                self.canvas.create_text(
+                    lx, ly,
+                    text=letter,
+                    fill="#9be3dc",
+                    font=(None, 14, "bold"),
+                    tags=("bg",)
+                )
 
     def update_frame(self):
         # Connection status
@@ -521,8 +664,8 @@ class ADSBRadarApp:
 
             x, y, dkm, brg = self.geo_to_canvas(lat, lon)
 
-            # skip outside max range * zoom
-            if dkm > self.max_range.get() * self.zoom.get():
+            # skip outside max range
+            if dkm > self.max_range.get():
                 continue
 
             seen_hexes.add(hexid)
