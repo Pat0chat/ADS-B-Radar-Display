@@ -472,10 +472,11 @@ class ADSBRadarApp:
         self.aircraft_trails.clear()
         self.canvas.delete('trails')
 
-    def km_to_pixels(self, km): #TODO change because of fullscreen !!
+    def km_to_pixels(self, km):
         # converts kilometers (on display) to canvas pixels based on max_range
         # Use the largest possible radius that fits in the resized canvas
-        radius_px = min(self.canvas_width, self.canvas_height) / 2.0
+        margin = 10   # space between heading rose and border
+        radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
         effective_range = self.max_range.get()
         px_per_km = radius_px / effective_range
         return km * px_per_km
@@ -532,7 +533,8 @@ class ADSBRadarApp:
         cy = self.canvas_height // 2
 
         # Use shortest canvas dimension for round radar
-        radius_px = min(self.canvas_width, self.canvas_height) / 2.0
+        margin = 10   # space between heading rose and border
+        radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
 
         # ----- RANGE RINGS -----
         for i in range(1, 5):
@@ -597,8 +599,8 @@ class ADSBRadarApp:
 
             # Cardinal letters (N/E/S/W)
             if deg in (0, 90, 180, 270):
-                lx = cx + (radius_px * 0.82) * sin_a
-                ly = cy - (radius_px * 0.82) * cos_a
+                lx = cx + (radius_px * 0.90) * sin_a
+                ly = cy - (radius_px * 0.90) * cos_a
                 letter = {0:"N", 90:"E", 180:"S", 270:"W"}[deg]
 
                 self.canvas.create_text(
