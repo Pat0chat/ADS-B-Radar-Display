@@ -1,12 +1,12 @@
 """
-ADS-B Radar v2
+ADS-B Radar
 Fetches data from dump1090 at http://localhost:8080/data.json and
 renders a radar-style view using tkinter Canvas.
 
 Features:
     - Real bearing and position of detected planes
-    - Symbols colored by altitude (gradient)
-    - History trails per aircraft
+    - Symbols for aircraft, rotor craft or unknown
+    - History trails per aircraft colored by altitude
     - Tkinter GUI controls
     - Click any aircraft icon to open a details popup with full info
 
@@ -39,7 +39,6 @@ REFRESH_MS = 1000     # update interval in milliseconds
 MAX_RANGE_KM = 200    # maximum radar range shown (km)
 CANVAS_SIZE = 800     # pixels (square canvas)
 TRAIL_MAX = 100       # default number of points in trail
-PLOT_SIZE = 32        # default size for detected object in radar view
 
 # ------------------- Utilities -------------------
 
@@ -526,8 +525,8 @@ class ADSBRadarApp:
 
         # Get data and update aircrafts
         data = self.source.snapshot()
-        self.aircraft_items.update_aircrafts(data, TRAIL_MAX)
-        self.aircraft_items.clean_data(MAX_RANGE_KM)
+        self.aircraft_items.update_aircrafts(data, self.trail_length.get())
+        self.aircraft_items.clean_data(self.max_range.get())
 
         # process aircrafts
         aircrafts = self.aircraft_items.get_aircrafts()
@@ -724,8 +723,6 @@ if __name__ == "__main__":
             CANVAS_SIZE = int(cfg["canvas_size"])
         if "trail_max" in cfg:
             TRAIL_MAX = int(cfg["trail_max"])
-        if "plot_size" in cfg:
-            PLOT_SIZE = int(cfg["plot_size"])
 
         print("[ADS-B Radar] **** Setup ****")
         print("[ADS-B Radar] Dump1090 URL: " + DATA_URL)
@@ -735,7 +732,6 @@ if __name__ == "__main__":
         print("[ADS-B Radar] Max range (km): " + str(MAX_RANGE_KM))
         print("[ADS-B Radar] Canvas size: " + str(CANVAS_SIZE))
         print("[ADS-B Radar] Trail max: " + str(TRAIL_MAX))
-        print("[ADS-B Radar] Plot size: " + str(PLOT_SIZE))
         print("[ADS-B Radar] ****")
 
         root = tk.Tk()

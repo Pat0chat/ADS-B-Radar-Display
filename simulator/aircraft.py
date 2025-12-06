@@ -115,5 +115,5 @@ class Aircraft:
             "track": round(self.track, 1),
             "speed": int(self.speed),
             "vert_rate": int(self.vspeed),
-            "seen": int(time.time()),
+            "seen": int(time.time() - self._last_behavior),
         }

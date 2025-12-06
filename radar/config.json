@@ -5,6 +5,5 @@
     "refresh_ms": 1000,
     "max_range_km": 200,
     "canvas_size": 800,
-    "trail_max": 120,
-    "plot_size": 10
+    "trail_max": 120
 }

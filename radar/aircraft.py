@@ -2,7 +2,6 @@
 
 
 from collections import deque
-import time
 
 class Aircrafts:
     """Represents collection of aircrafts"""
@@ -27,24 +26,39 @@ class Aircrafts:
                 self.aircrafts[hexid] = aircraft
     
     def clean_data(self, max_range):
-        for hexid in self.aircrafts.keys():
-            if hexid not in self.seen_hexes:
-                del self.aircrafts[hexid]
+        """Remove aircraft too far, invalid, or stale."""
+        to_delete = []
 
-                if hexid in self.canvas_ids:
-                    del self.canvas_ids[hexid]
-            
-            if self.aircrafts[hexid].distance_km > max_range:
-                del self.aircrafts[hexid]
+        for hexid in list(self.aircrafts.keys()):
+            ac = self.aircrafts[hexid]
+
+            # Remove unseen plane
+            if hexid not in self.seen_hexes:
+                to_delete.append(hexid)
+                continue
+
+            # Remove aircraft missing coordinates
+            if ac.lat is None or ac.lon is None:
+                to_delete.append(hexid)
+                continue
+
+            # Remove stale / not seen for a long time
+            if isinstance(ac.last_seen, (int, float)):
+                if ac.last_seen > 60:
+                    to_delete.append(hexid)
+                    continue
+
+        for hexid in to_delete:
+            del self.aircrafts[hexid]
     
     def get_aircrafts(self):
-        return self.aircrafts.copy()
+        return self.aircrafts
     
     def get_aircraft(self, hex):
         return self.aircrafts[hex]
     
     def get_canvas_ids(self):
-        return self.canvas_ids.copy()
+        return self.canvas_ids
     
     def set_canvas_id(self, hex, canvas_id):
         self.canvas_ids[hex] = canvas_id
@@ -78,7 +92,7 @@ class Aircraft:
         self.speed = raw.get("speed") or raw.get("groundspeed") or raw.get("gs") or raw.get("spd") or 0
         self.track = raw.get("track") or raw.get("heading") or 0
         self.vert_rate = raw.get("vert_rate") or 0
-        self.last_seen = time.strftime("%H:%M:%S", time.localtime())
+        self.last_seen = raw.get("seen") or raw.get("seen_pos") or 0
     
     def update_compute_data(self, bearing, distance):
         self.bearing_deg = bearing
