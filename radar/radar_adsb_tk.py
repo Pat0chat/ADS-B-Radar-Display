@@ -22,13 +22,11 @@ Run:
 import tkinter as tk
 from tkinter import ttk
 import math
-import time
 import json
 import os
-from PIL import Image, ImageDraw, ImageTk
-from collections import deque
 
 from datasource import Dump1090Source
+from aircraft import Aircrafts
 
 # ------------------- Configuration -------------------
 
@@ -169,63 +167,6 @@ def speed_to_color(speed):
 
     return f"#{r:02x}{g:02x}{b:02x}"
 
-# ------------------- Plane icon generator -------------------
-
-
-def make_mil_triangle(size=32, fill="#ffffff", outline="#000000"):
-    """MIL-STD 2525 style fixed-wing triangle symbol (point up)."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cx, cy = size/2, size/2
-    s = size/2.1
-    pts = [
-        (cx, cy - s),        # Nose
-        (cx + s*0.85, cy + s*0.75),
-        (cx - s*0.85, cy + s*0.75),
-    ]
-    draw.polygon(pts, fill=fill, outline=outline, width=2)
-    return img
-
-
-def make_mil_helicopter(size=32, fill="#ffffff", outline="#000000"):
-    """Simple MIL-style helicopter icon."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cx, cy = size/2, size/2
-    s = size/2
-
-    # body
-    draw.ellipse((cx-s*0.3, cy-s*0.3, cx+s*0.3, cy+s*0.3),
-                 fill=fill, outline=outline, width=2)
-
-    # rotor bar
-    draw.line([(cx - s*0.9, cy - s*0.8),
-               (cx + s*0.9, cy - s*0.8)],
-              fill=outline, width=3)
-
-    # tail boom
-    draw.line([(cx, cy + s*0.3),
-               (cx, cy + s*1.2)],
-              fill=outline, width=2)
-
-    return img
-
-
-def make_mil_unknown(size=32, fill="#ffffff", outline="#000000"):
-    """Generic 'unknown' diamond symbol."""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    cx, cy = size/2, size/2
-    s = size/2
-    pts = [
-        (cx,     cy - s),
-        (cx + s, cy),
-        (cx,     cy + s),
-        (cx - s, cy),
-    ]
-    draw.polygon(pts, fill=fill, outline=outline, width=2)
-    return img
-
 # ------------------- Main Application -------------------
 
 
@@ -334,23 +275,15 @@ class ADSBRadarApp:
         self.status_count = ttk.Label(controls, text="0", foreground="orange")
         self.status_count.pack(anchor="w")
 
-        # State
-        self.aircraft_trails = {}  # hex -> deque of (x,y,alt)
-        self.aircraft_icons = {}
-        self.symbol_fixedwing = make_mil_triangle(
-            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
-        self.symbol_helicopter = make_mil_helicopter(
-            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
-        self.symbol_unknown = make_mil_unknown(
-            size=PLOT_SIZE, fill="#ffffff", outline="#333333")
-        self.aircraft_items = {}
+        # Aircrafts collection
+        self.aircraft_items = Aircrafts()
 
         # Draw static radar background once
         self.draw_background()
         self.running = True
 
         # Data source
-        self.source = Dump1090Source(DATA_URL)
+        self.source = Dump1090Source(DATA_URL, REFRESH_MS)
         self.source.start()
 
         # Start GUI update loop
@@ -449,7 +382,7 @@ class ADSBRadarApp:
         self.update_frame()
 
     def clear_trails(self):
-        self.aircraft_trails.clear()
+        self.aircraft_items.clear_trails()
         self.canvas.delete('trails')
 
     def km_to_pixels(self, km):
@@ -476,34 +409,6 @@ class ADSBRadarApp:
         y = self.canvas_height/2 - dist_px * math.cos(angle_rad)
 
         return x, y, dkm, brg
-
-    def get_icon(self, base_img, color_hex, heading, size=48):
-        heading_r = int(round(heading / 5.0) * 5) % 360
-        key = (color_hex, heading_r, size)
-        if key in self.aircraft_icons:
-            return self.aircraft_icons[key]
-
-        # white template icon
-        base = base_img
-
-        # convert hex to RGB tuple
-        R = int(color_hex[1:3], 16)
-        G = int(color_hex[3:5], 16)
-        B = int(color_hex[5:7], 16)
-
-        # tint the white plane
-        colored = Image.new("RGBA", base.size, (R, G, B, 255))
-        mask = base.split()[3]
-        colored.putalpha(mask)
-
-        # rotate final colored icon
-        rotated = colored.rotate(
-            heading_r, expand=True, resample=Image.BICUBIC)
-
-        # cache final icon
-        photo = ImageTk.PhotoImage(rotated)
-        self.aircraft_icons[key] = photo
-        return photo
 
     # ------------------- Radar rendering -------------------
     def draw_background(self):
@@ -614,55 +519,29 @@ class ADSBRadarApp:
         # Pause
         if self.paused.get():
             return
-
-        data = self.source.snapshot()
-
+        
+        # Clear view 
         self.canvas.delete("aircraft")
         self.canvas.delete("trails")
-        self.aircraft_items = {}
-        seen_hexes = set()
 
-        # process aircraft
-        for ac in data:
-            if not (ac.get("lat") and ac.get("lon")):
-                continue
-            hexid = ac.get("hex") or ac.get("icao24") or ac.get(
-                "flight") or str(ac.get("id", ""))
-            lat = ac.get("lat")
-            lon = ac.get("lon")
+        # Get data and update aircrafts
+        data = self.source.snapshot()
+        self.aircraft_items.update_aircrafts(data, TRAIL_MAX)
+        self.aircraft_items.clean_data(MAX_RANGE_KM)
 
-            # dump1090 fields may vary; try several
-            altitude = ac.get("altitude") or ac.get(
-                "alt_baro") or ac.get("alt_geom") or ac.get("alt")
+        # process aircrafts
+        aircrafts = self.aircraft_items.get_aircrafts()
+        for hexid in aircrafts:
+            aircraft = aircrafts[hexid]
+            x, y, dkm, brg = self.geo_to_canvas(aircraft.lat, aircraft.lon)
 
-            track = ac.get("track") if ac.get(
-                "track") is not None else (ac.get("heading") or 0)
-            callsign = ac.get("flight") or ac.get("callsign") or ""
-            reg = ac.get("reg") or ac.get("registration") or ""
-
-            # attempt to extract speed (kts) and vertical speed (fpm)
-            speed = ac.get("speed") or ac.get(
-                "groundspeed") or ac.get("gs") or ac.get("spd")
-            vertical_rate = ac.get("vert_rate") or 0
-
-            x, y, dkm, brg = self.geo_to_canvas(lat, lon)
-
-            # skip outside max range
-            if dkm > self.max_range.get():
-                continue
-
-            seen_hexes.add(hexid)
-
-            # update trail
-            trail = self.aircraft_trails.get(hexid)
-            if trail is None:
-                trail = deque(maxlen=self.trail_length.get())
-                self.aircraft_trails[hexid] = trail
-            trail.append((x, y, altitude))
+            aircraft.update_compute_data(brg, dkm)
+            aircraft.update_trail(x, y)
 
             # draw trail
-            if len(trail) > 1 and self.trail_length.get() > 0:
-                n = len(trail)
+            trail = aircraft.trail
+            n = len(trail)
+            if n > 1 and self.trail_length.get() > 0:
                 for idx in range(1, n):
                     ax, ay, alt1 = trail[idx-1]
                     bx, by, alt2 = trail[idx]
@@ -681,33 +560,40 @@ class ADSBRadarApp:
                     self.canvas.create_line(
                         ax, ay, bx, by, fill=fade_color, width=width, tags=("trails",))
 
-            # draw aircraft icon
-            category = ac.get("category") or ""
-            category = category.upper()
-
-            base = None
-            if category.startswith("A"):     # Fixed-wing
-                base = self.symbol_fixedwing
-            elif category.startswith("B"):   # Rotorcraft
-                base = self.symbol_helicopter
+            # draw aircraft point
+            color_inner = "#ffffff"
+            color_outer = "#ffffff"
+            if aircraft.category.startswith("A"):     # Fixed-wing
+                color_outer = "#ffc400"
+            elif aircraft.category.startswith("B"):   # Rotorcraft
+                color_outer = "#e5ff00"
             else:
-                base = self.symbol_unknown
-            icon = self.get_icon(base, "#ffffff", track, size=40)
+                color_outer = "#d3d3d3"    # Unknown
+            canvas_id = self.canvas.create_oval(
+                x - 4, y - 4, x + 4, y + 4,
+                outline=color_outer,
+                width=2,
+                tags=("aircraft",)
+            )
+            self.canvas.create_oval(
+                x - 1, y - 1, x + 1, y + 1,
+                fill=color_inner,
+                outline="",
+                tags=("aircraft",)
+            )
 
-            # Place image centered
-            img_id = self.canvas.create_image(
-                x, y, image=icon, tags=("aircraft",))
+            self.aircraft_items.set_canvas_id(hexid, canvas_id)
 
             # Heading / speed vector
             base_len = 10
-            spd = (speed or 0)
+            spd = (aircraft.speed or 0)
 
             # speed extends line slightly
             vector_len = base_len + spd * 0.07
 
             vect_speed_color = speed_to_color(spd)
 
-            angle_rad = math.radians(track)
+            angle_rad = math.radians(aircraft.track)
 
             x2 = x + vector_len * math.sin(angle_rad)
             y2 = y - vector_len * math.cos(angle_rad)
@@ -721,50 +607,32 @@ class ADSBRadarApp:
                 tags=("aircraft",)
             )
 
-            # Store data
-            self.aircraft_items[img_id] = {
-                "hex": hexid,
-                "callsign": callsign,
-                "registration": reg,
-                "category": category,
-                "lat": lat,
-                "lon": lon,
-                "altitude": altitude,
-                "track": track,
-                "distance": round(dkm, 2),
-                "bearing": round(brg, 1),
-                "speed": speed,
-                "vert_rate": vertical_rate,
-                "last_seen": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            }
-
             # Attach label (as separate canvas items but tagged 'aircraft' too)
             if self.show_labels.get():
-                label = callsign or reg or hexid
-                lab_txt = f"{label}\n{int(dkm)} km {altitude or '?'} ft"
+                label = aircraft.callsign or aircraft.registration or aircraft.hex
+                lab_txt = f"{label}\n{int(dkm)} km {aircraft.altitude or '?'} ft"
                 self.canvas.create_text(
                     x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
-
-        for h in list(self.aircraft_trails.keys()):
-            if h not in seen_hexes:
-                del self.aircraft_trails[h]
 
     # ------------------- Aircraft click -------------------
     def on_canvas_click(self, event):
         radius = 8
         items = self.canvas.find_overlapping(event.x-radius, event.y-radius,
                                              event.x+radius, event.y+radius)
+        canvas_ids = self.aircraft_items.get_canvas_ids()
         for it in reversed(items):
-            if it in self.aircraft_items:
-                self.show_aircraft_popup(self.aircraft_items[it])
-                return
+            for hexid in canvas_ids:
+                if it == canvas_ids[hexid]:
+                    aircraft = self.aircraft_items.get_aircraft(hexid)
+                    self.show_aircraft_popup(aircraft)
+                    return
 
     def show_aircraft_popup(self, ac_initial):
         """Open a popup for an aircraft and keep updating its info."""
-        hexid = ac_initial["hex"]
+        hexid = ac_initial.hex
 
         win = tk.Toplevel(self.root)
-        title = ac_initial.get("callsign") or hexid or "Aircraft"
+        title = ac_initial.callsign or hexid or "Aircraft"
         win.title(f"Aircraft — {title}")
         win.geometry("360x260")
 
@@ -787,9 +655,10 @@ class ADSBRadarApp:
 
             # Find latest data for this aircraft
             latest = None
-            for item in self.aircraft_items.values():
-                if item["hex"] == hexid:
-                    latest = item
+            aircrafts = self.aircraft_items.get_aircrafts()
+            for hex in aircrafts:
+                if hex == hexid:
+                    latest = aircrafts[hex]
                     break
 
             # If aircraft gone → close popup
@@ -802,19 +671,19 @@ class ADSBRadarApp:
 
             # Build updated text
             lines = [
-                f"Hex: {latest.get('hex')}",
-                f"Callsign: {latest.get('callsign')}",
-                f"Registration: {latest.get('registration')}",
-                f"Category: {latest.get('category')}",
-                f"Latitude: {latest.get('lat'):.6f}",
-                f"Longitude: {latest.get('lon'):.6f}",
-                f"Altitude: {latest.get('altitude')} ft",
-                f"Distance: {latest.get('distance')} km",
-                f"Bearing: {latest.get('bearing')}°",
-                f"Track: {latest.get('track')}°",
-                f"Speed: {latest.get('speed')} kts",
-                f"Vertical speed: {latest.get('vert_rate')} fpm",
-                f"Last seen: {latest.get('last_seen')}",
+                f"Hex: {latest.hex}",
+                f"Callsign: {latest.callsign}",
+                f"Registration: {latest.registration}",
+                f"Category: {latest.category}",
+                f"Latitude: {latest.lat:.6f}",
+                f"Longitude: {latest.lon:.6f}",
+                f"Altitude: {latest.altitude} ft",
+                f"Distance: {latest.distance_km} km",
+                f"Bearing: {latest.bearing_deg}°",
+                f"Track: {latest.track}°",
+                f"Speed: {latest.speed} kts",
+                f"Vertical speed: {latest.vert_rate} fpm",
+                f"Last seen: {latest.last_seen}",
             ]
 
             txt.configure(state="normal")
@@ -836,7 +705,7 @@ class ADSBRadarApp:
 
 # ------------------- Run -------------------
 if __name__ == "__main__":
-    # try:
+    try:
         print("[ADS-B Radar] Launching ADS-B Radar")
 
         # load config.json
@@ -879,5 +748,5 @@ if __name__ == "__main__":
         root.protocol("WM_DELETE_WINDOW", on_close)
         root.mainloop()
 
-    # except Exception as e:
+    except Exception as e:
         print("[ADS-B Radar] Error :", e)

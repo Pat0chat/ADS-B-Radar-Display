@@ -5,12 +5,13 @@ import requests
 
 class Dump1090Source:
 
-    def __init__(self, url):
+    def __init__(self, url, refresh):
         self.url = url
         self.running = False
         self.alive = False
         self.last_seen_time = time.strftime("%H:%M:%S", time.localtime())
         self.latest_data = []
+        self.refresh = round(refresh / 1000)
         self.lock = threading.Lock()
 
     def start(self):
@@ -41,7 +42,7 @@ class Dump1090Source:
             except:
                 self.alive = False
                 pass
-            time.sleep(1)
+            time.sleep(self.refresh)
 
     def _process(self, raw_list):
         self.last_seen_time = time.strftime("%H:%M:%S", time.localtime())
