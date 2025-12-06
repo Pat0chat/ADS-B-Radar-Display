@@ -21,14 +21,14 @@ Run:
 
 import tkinter as tk
 from tkinter import ttk
-import requests
 import math
 import time
 import json
 import os
 from PIL import Image, ImageDraw, ImageTk
 from collections import deque
-import threading
+
+from datasource import Dump1090Source
 
 # ------------------- Configuration -------------------
 
@@ -277,9 +277,7 @@ class ADSBRadarApp:
         ttk.Checkbutton(controls, text="Pause updates",
                         variable=self.paused).pack(anchor="w", pady=(6, 0))
 
-        ttk.Button(controls, text="Center to current vars",
-                   command=self.draw_background).pack(fill="x", pady=(6, 0))
-        ttk.Button(controls, text="Refresh now",
+        ttk.Button(controls, text="Refresh view",
                    command=self.refresh_now).pack(fill="x", pady=(6, 0))
         ttk.Button(controls, text='Clear Trails',
                    command=self.clear_trails).pack(fill='x', pady=(6, 0))
@@ -346,35 +344,17 @@ class ADSBRadarApp:
         self.symbol_unknown = make_mil_unknown(
             size=PLOT_SIZE, fill="#ffffff", outline="#333333")
         self.aircraft_items = {}
-        self.latest_data = []
-        self.data_lock = threading.Lock()
 
-        # draw static radar background once
+        # Draw static radar background once
         self.draw_background()
         self.running = True
 
-        # Start async fetch thread
-        self.fetch_thread = threading.Thread(
-            target=self.background_fetch_loop, daemon=True)
-        self.fetch_thread.start()
+        # Data source
+        self.source = Dump1090Source(DATA_URL)
+        self.source.start()
 
         # Start GUI update loop
         self.schedule_update()
-
-    # ------------------- Threaded fetch -------------------
-    def background_fetch_loop(self):
-        while self.running:
-            alive = False
-            try:
-                r = requests.get(DATA_URL, timeout=1.0)
-                data = r.json()
-                with self.data_lock:
-                    self.latest_data = data
-                alive = True if data else False
-            except:
-                alive = False
-            self.dump1090_alive = alive
-            time.sleep(1.0)
 
     # ------------------- GUI helpers -------------------
     def on_canvas_resize(self, event):
@@ -440,8 +420,7 @@ class ADSBRadarApp:
                 tree.delete(row)
 
             # Insert new rows from dump1090
-            with self.data_lock:
-                data = self.latest_data.copy()
+            data = self.source.snapshot()
 
             for ac in data:
                 row = (
@@ -466,6 +445,7 @@ class ADSBRadarApp:
         refresh()
 
     def refresh_now(self):
+        self.draw_background()
         self.update_frame()
 
     def clear_trails(self):
@@ -613,28 +593,29 @@ class ADSBRadarApp:
 
     def update_frame(self):
         # Connection status
-        if self.dump1090_alive:
+        if self.source.alive:
             self.status_label.configure(text="Connected", foreground="green")
         else:
             self.status_label.configure(text="No response", foreground="red")
 
         # Last updated
-        if self.latest_data:
-            last_seen = time.strftime("%H:%M:%S", time.localtime())
-            self.status_freshness.configure(text=last_seen, foreground="green")
+        if self.source.alive:
+            self.status_freshness.configure(text=self.source.last_seen(), foreground="green")
         else:
             self.status_freshness.configure(text="No data", foreground="red")
 
         # Aircraft count
-        self.status_count.configure(text=str(len(self.latest_data) if self.latest_data else 0),
-                                    foreground="green" if self.latest_data else "red")
+        aircrafts_count = self.source.aircrafts_count()
+        if aircrafts_count > 0 :
+            self.status_count.configure(text=str(aircrafts_count), foreground="green")
+        else:
+            self.status_count.configure(text="--", foreground="gray")
 
         # Pause
         if self.paused.get():
             return
 
-        with self.data_lock:
-            data = self.latest_data.copy()
+        data = self.source.snapshot()
 
         self.canvas.delete("aircraft")
         self.canvas.delete("trails")
@@ -748,10 +729,10 @@ class ADSBRadarApp:
                 "category": category,
                 "lat": lat,
                 "lon": lon,
-                "altitude_ft": altitude,
-                "track_deg": track,
-                "distance_km": round(dkm, 2),
-                "bearing_deg": round(brg, 1),
+                "altitude": altitude,
+                "track": track,
+                "distance": round(dkm, 2),
+                "bearing": round(brg, 1),
                 "speed": speed,
                 "vert_rate": vertical_rate,
                 "last_seen": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -827,10 +808,10 @@ class ADSBRadarApp:
                 f"Category: {latest.get('category')}",
                 f"Latitude: {latest.get('lat'):.6f}",
                 f"Longitude: {latest.get('lon'):.6f}",
-                f"Altitude: {latest.get('altitude_ft')} ft",
-                f"Distance: {latest.get('distance_km')} km",
-                f"Bearing: {latest.get('bearing_deg')}°",
-                f"Track: {latest.get('track_deg')}°",
+                f"Altitude: {latest.get('altitude')} ft",
+                f"Distance: {latest.get('distance')} km",
+                f"Bearing: {latest.get('bearing')}°",
+                f"Track: {latest.get('track')}°",
                 f"Speed: {latest.get('speed')} kts",
                 f"Vertical speed: {latest.get('vert_rate')} fpm",
                 f"Last seen: {latest.get('last_seen')}",
@@ -855,7 +836,7 @@ class ADSBRadarApp:
 
 # ------------------- Run -------------------
 if __name__ == "__main__":
-    try:
+    # try:
         print("[ADS-B Radar] Launching ADS-B Radar")
 
         # load config.json
@@ -898,5 +879,5 @@ if __name__ == "__main__":
         root.protocol("WM_DELETE_WINDOW", on_close)
         root.mainloop()
 
-    except Exception as e:
+    # except Exception as e:
         print("[ADS-B Radar] Error :", e)
