@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 
+import io
+import math
 import threading
 import time
 import requests
+import urllib.request
+from PIL import Image
 
 # ------------------- Dump1090Source -------------------
 class Dump1090Source:
@@ -70,3 +74,29 @@ class Dump1090Source:
         """Get last stored data."""
         with self.lock:
             return self.latest_data.copy()
+
+
+# ------------------- OSMSource -------------------
+class OSMSource:
+    """OSMSource class fetching data from OSM API."""
+
+    def __init__(self):
+        pass
+
+    def latlon_to_tile(self, lat, lon, zoom):
+        """Convert lat/lon to OSM tile numbers."""
+        lat_r = math.radians(lat)
+        n = 2.0 ** zoom
+        xtile = int((lon + 180.0) / 360.0 * n)
+        ytile = int((1.0 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2.0 * n)
+        return xtile, ytile
+
+    def fetch_osm_tile(self, z, x, y):
+        """Download a single OSM tile. Return PIL image or None."""
+        try:
+            url = f"https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
+            with urllib.request.urlopen(url, timeout=2) as resp:
+                data = resp.read()
+            return Image.open(io.BytesIO(data))
+        except Exception:
+            return None

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import time
+import math
 import tkinter as tk
 from tkinter import ttk
-import math
+from PIL import Image, ImageTk
 
-from datasource import Dump1090Source
+from datasource import Dump1090Source, OSMSource
 from aircraft import Aircrafts
 
 # ------------------- Utilities -------------------
@@ -123,6 +124,7 @@ class ADSBRadarApp:
         self.show_labels = tk.BooleanVar(value=True)
         self.timeline_minutes = tk.IntVar(value=5)
         self.refresh_time = tk.IntVar(value=1000)
+        self.show_osm = tk.BooleanVar(value=False)
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
@@ -146,21 +148,21 @@ class ADSBRadarApp:
         root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
         # --- Side controls ---
-        controls = ttk.Frame(root, padding=(6, 6))
-        controls.grid(row=0, column=1, sticky="ns")
+        self.controls = ttk.Frame(root, padding=(6, 6))
+        self.controls.grid(row=0, column=1, sticky="ns")
 
-        ttk.Button(controls, text="Show data table",
+        ttk.Button(self.controls, text="Show data table",
                    command=self.show_raw_table).pack(fill="x", pady=(6, 0))
 
-        ttk.Label(controls, text="Center Latitude:").pack(anchor="w", pady=(6, 0))
-        ttk.Entry(controls, textvariable=self.center_lat).pack(fill="x")
-        ttk.Label(controls, text="Center Longitude:").pack(anchor="w", pady=(6, 0))
-        ttk.Entry(controls, textvariable=self.center_lon).pack(fill="x")
+        ttk.Label(self.controls, text="Center Latitude:").pack(anchor="w", pady=(6, 0))
+        ttk.Entry(self.controls, textvariable=self.center_lat).pack(fill="x")
+        ttk.Label(self.controls, text="Center Longitude:").pack(anchor="w", pady=(6, 0))
+        ttk.Entry(self.controls, textvariable=self.center_lon).pack(fill="x")
 
         # Range (km) Spinbox
-        ttk.Label(controls, text="Range (km):").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Range (km):").pack(anchor="w", pady=(6, 0))
         ttk.Spinbox(
-            controls,
+            self.controls,
             from_=10, to=500,
             increment=1,
             textvariable=self.max_range,
@@ -169,9 +171,9 @@ class ADSBRadarApp:
         ).pack(fill="x")
 
         # Trail length Spinbox
-        ttk.Label(controls, text="Trail length:").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Trail length:").pack(anchor="w", pady=(6, 0))
         ttk.Spinbox(
-            controls,
+            self.controls,
             from_=0, to=200,
             increment=1,
             textvariable=self.trail_length,
@@ -179,9 +181,9 @@ class ADSBRadarApp:
         ).pack(fill="x")
 
         # Timeline (minutes) Spinbox
-        ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Timeline (minutes):").pack(anchor="w", pady=(6, 0))
         ttk.Spinbox(
-            controls,
+            self.controls,
             from_=1, to=30,
             increment=1,
             textvariable=self.timeline_minutes,
@@ -190,30 +192,29 @@ class ADSBRadarApp:
         ).pack(fill="x")
 
         # Refresh rate (ms) Spinbox
-        ttk.Label(controls, text="Refresh rate (ms):").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Refresh rate (ms):").pack(anchor="w", pady=(6, 0))
         ttk.Spinbox(
-            controls,
+            self.controls,
             from_=50, to=2000,
             increment=50,
             textvariable=self.refresh_time,
             width=10,
-            command=lambda: self.source.update_refresh(self.refresh_time.get())
+            command=lambda: self.source_dump.update_refresh(self.refresh_time.get())
         ).pack(fill="x")
 
-        ttk.Checkbutton(controls, text="Show labels", variable=self.show_labels).pack(
-            anchor="w", pady=(6, 0))
-        ttk.Checkbutton(controls, text="Pause updates",
-                        variable=self.paused).pack(anchor="w", pady=(6, 0))
+        ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w", pady=(6, 0))
+        ttk.Checkbutton(self.controls, text="Pause updates", variable=self.paused).pack(anchor="w", pady=(6, 0))
+        ttk.Checkbutton(self.controls, text="Show OSM background", variable=self.show_osm, command=self.refresh_now).pack(anchor="w", pady=(6, 0))
 
-        ttk.Button(controls, text="Refresh view",
+        ttk.Button(self.controls, text="Refresh view",
                    command=self.refresh_now).pack(anchor="w", fill="x", pady=(6, 0))
-        ttk.Button(controls, text='Clear Trails',
+        ttk.Button(self.controls, text='Clear Trails',
                    command=self.clear_trails).pack(anchor="w", fill='x', pady=(6, 0))
 
-        ttk.Label(controls, text="Altitude Legend:").pack(
+        ttk.Label(self.controls, text="Altitude Legend:").pack(
             anchor="w", pady=(6, 0))
 
-        alt_legend = tk.Canvas(controls, width=140, height=30,
+        alt_legend = tk.Canvas(self.controls, width=140, height=30,
                                bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         alt_legend.pack(pady=(2, 6))
 
@@ -227,8 +228,8 @@ class ADSBRadarApp:
         alt_legend.create_text(135, 15, anchor="e",
                                text="40,000 ft", font=(None, 8))
 
-        ttk.Label(controls, text="Speed Legend:").pack(anchor="w", pady=(6, 0))
-        spd_legend = tk.Canvas(controls, width=140, height=30,
+        ttk.Label(self.controls, text="Speed Legend:").pack(anchor="w", pady=(6, 0))
+        spd_legend = tk.Canvas(self.controls, width=140, height=30,
                                bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         spd_legend.pack(pady=(2, 6))
 
@@ -242,16 +243,16 @@ class ADSBRadarApp:
         spd_legend.create_text(135, 15, anchor="e",
                                text="600 kt", font=(None, 8))
 
-        ttk.Label(controls, text="Dump1090 Status:").pack(
+        ttk.Label(self.controls, text="Dump1090 Status:").pack(
             anchor="w", pady=(6, 0))
         self.status_label = ttk.Label(
-            controls, text="Unknown", foreground="orange")
+            self.controls, text="Unknown", foreground="orange")
         self.status_label.pack(anchor="w")
         self.dump1090_alive = False
 
-        ttk.Label(controls, text="Last update:").pack(anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Last update:").pack(anchor="w", pady=(6, 0))
         self.status_freshness = ttk.Label(
-            controls, text="N/A", foreground="orange")
+            self.controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
 
         # ---- Timeline ----
@@ -269,18 +270,61 @@ class ADSBRadarApp:
         self.aircraft_items = Aircrafts()
 
         # --- Data source ---
-        self.source = Dump1090Source(DATA_URL, self.refresh_time.get())
-        self.source.start()
+        self.source_dump = Dump1090Source(DATA_URL, self.refresh_time.get())
+        self.source_dump.start()
+
+        self.source_osm = OSMSource()
 
         # --- UI ---
+        #Toggle button
+        self.create_toogle_button()
+
         # Draw static radar background once
         self.draw_background()
         self.running = True
+        self.controls_visible = True
 
         # Start GUI update loop
         self.schedule_update()
 
     # ------------------- GUI helpers -------------------
+    def create_toogle_button(self):
+        # Toggle control button
+        bx, by = 30, 30
+        radius = 18
+
+        self.hud_circle = self.canvas.create_oval(
+            bx - radius, by - radius,
+            bx + radius, by + radius,
+            fill="#02121a",
+            outline="#2b6d6b",
+            width=2,
+            tags=("hud_btn",)
+        )
+
+        self.hud_icon = self.canvas.create_text(
+            bx, by - 2,
+            text="≡",
+            fill="#9be3dc",
+            font=("Segoe UI", 14, "bold"),
+            tags=("hud_btn",)
+        )
+
+        def click_hud_button(event):
+            self.toggle_controls()
+
+        self.canvas.tag_bind("hud_btn", "<Button-1>", click_hud_button)
+
+    def toggle_controls(self):
+        if self.controls_visible:
+            # Hide it
+            self.controls.grid_remove()
+            self.controls_visible = False
+        else:
+            # Show it
+            self.controls.grid()
+            self.controls_visible = True
+
     def on_canvas_resize(self, event):
         """Handle canvas resize events (debounced redraw)."""
         # update current canvas size
@@ -295,7 +339,7 @@ class ADSBRadarApp:
         if not self.running:
             return
         self.update_frame()
-        self.source.update_refresh(self.refresh_time.get())
+        self.source_dump.update_refresh(self.refresh_time.get())
         self.root.after(self.refresh_time.get(), self.schedule_update)
 
     def show_raw_table(self):
@@ -348,7 +392,7 @@ class ADSBRadarApp:
                 tree.delete(row)
 
             # Insert new rows from dump1090
-            data = self.source.snapshot()
+            data = self.source_dump.snapshot()
 
             for ac in data:
                 row = (
@@ -413,9 +457,51 @@ class ADSBRadarApp:
         return x, y, dkm, brg
 
     # ------------------- Radar rendering -------------------
+    def draw_osm_background(self):
+        """Download and draw an OSM tile grid as the radar background."""
+        self.canvas.delete("osmbg")
+
+        zoom = 12   # fixed zoom; later we can make this user-adjustable
+        lat = self.center_lat.get()
+        lon = self.center_lon.get()
+
+        cw, ch = self.canvas_width, self.canvas_height
+
+        # Determine how many tiles we need to cover the canvas
+        tiles_x = int(cw / 256) + 2
+        tiles_y = int(ch / 256) + 2
+
+        center_xt, center_yt = self.source_osm.latlon_to_tile(lat, lon, zoom)
+
+        # start tile indices
+        start_x = center_xt - tiles_x // 2
+        start_y = center_yt - tiles_y // 2
+
+        stitched = Image.new("RGB", (tiles_x * 256, tiles_y * 256))
+
+        for ix in range(tiles_x):
+            for iy in range(tiles_y):
+                tx = start_x + ix
+                ty = start_y + iy
+
+                tile = self.source_osm.fetch_osm_tile(zoom, tx, ty)
+                if tile:
+                    stitched.paste(tile, (ix * 256, iy * 256))
+
+        # resize to canvas
+        stitched = stitched.resize((cw, ch), Image.Resampling.LANCZOS)
+        self.osm_tk = ImageTk.PhotoImage(stitched)
+        self.canvas.create_image(0, 0, anchor="nw", image=self.osm_tk, tags="osmbg")
+
     def draw_background(self):
-        """Draw static radar background: rings, center marker and heading rose."""
+        """Draw either radar background or OSM map + rings overlay."""
         self.canvas.delete("bg")
+        self.canvas.delete("osmbg")
+        self.canvas.delete("hud_btn")
+
+        # Draw OSM map if enabled
+        if self.show_osm.get():
+            self.draw_osm_background()
 
         cx = self.canvas_width // 2
         cy = self.canvas_height // 2
@@ -489,19 +575,22 @@ class ADSBRadarApp:
                     font=(None, 14, "bold"),
                     tags=("bg",)
                 )
+        
+        # Toggle button
+        self.create_toogle_button()
 
     def update_frame(self):
         """Update aircraft data and redraw dynamic canvas items."""
         # Connection status
-        if self.source.alive:
+        if self.source_dump.alive:
             self.status_label.configure(text="Connected", foreground="green")
         else:
             self.status_label.configure(text="No response", foreground="red")
 
         # Last updated
-        if self.source.alive:
+        if self.source_dump.alive:
             self.status_freshness.configure(
-                text=self.source.last_seen(), foreground="green")
+                text=self.source_dump.last_seen(), foreground="green")
         else:
             self.status_freshness.configure(text="No data", foreground="red")
 
@@ -514,7 +603,7 @@ class ADSBRadarApp:
         self.canvas.delete("trails")
 
         # Get data and update aircrafts
-        data = self.source.snapshot()
+        data = self.source_dump.snapshot()
         self.aircraft_items.update_aircrafts(data, self.trail_length.get())
         self.aircraft_items.clean_data()
 
@@ -598,7 +687,7 @@ class ADSBRadarApp:
                     x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
 
         # Update timeline count
-        aircrafts_count = self.source.aircrafts_count()
+        aircrafts_count = self.source_dump.aircrafts_count()
         timestamp = time.time()
         self.count_history.append((timestamp, aircrafts_count))
         if len(self.count_history) > self.max_history:
