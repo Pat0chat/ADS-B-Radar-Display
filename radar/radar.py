@@ -150,28 +150,55 @@ class ADSBRadarApp:
         controls.grid(row=0, column=1, sticky="ns")
 
         ttk.Button(controls, text="Show data table",
-                   command=self.show_raw_table).pack(fill="x", pady=(8, 4))
+                   command=self.show_raw_table).pack(fill="x", pady=(6, 0))
 
-        ttk.Label(controls, text="Center Latitude:").pack(anchor="w")
+        ttk.Label(controls, text="Center Latitude:").pack(anchor="w", pady=(6, 0))
         ttk.Entry(controls, textvariable=self.center_lat).pack(fill="x")
-        ttk.Label(controls, text="Center Longitude:").pack(anchor="w")
+        ttk.Label(controls, text="Center Longitude:").pack(anchor="w", pady=(6, 0))
         ttk.Entry(controls, textvariable=self.center_lon).pack(fill="x")
 
+        # Range (km) Spinbox
         ttk.Label(controls, text="Range (km):").pack(anchor="w", pady=(6, 0))
-        ttk.Scale(controls, from_=10, to=500, variable=self.max_range,
-                  orient="horizontal").pack(fill="x")
+        ttk.Spinbox(
+            controls,
+            from_=10, to=500,
+            increment=1,
+            textvariable=self.max_range,
+            width=10,
+            command=lambda: self.refresh_now()
+        ).pack(fill="x")
 
+        # Trail length Spinbox
         ttk.Label(controls, text="Trail length:").pack(anchor="w", pady=(6, 0))
-        ttk.Scale(controls, from_=0, to=200, variable=self.trail_length,
-                  orient="horizontal").pack(fill="x")
+        ttk.Spinbox(
+            controls,
+            from_=0, to=200,
+            increment=1,
+            textvariable=self.trail_length,
+            width=10
+        ).pack(fill="x")
 
-        ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w")
-        ttk.Scale(controls, from_=1, to=30, variable=self.timeline_minutes,
-                  orient="horizontal", command=lambda v: self.update_timeline_max()).pack(fill="x")
+        # Timeline (minutes) Spinbox
+        ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w", pady=(6, 0))
+        ttk.Spinbox(
+            controls,
+            from_=1, to=30,
+            increment=1,
+            textvariable=self.timeline_minutes,
+            width=10,
+            command=self.update_timeline_max
+        ).pack(fill="x")
 
-        ttk.Label(controls, text="Refresh rate (ms):").pack(anchor="w")
-        ttk.Scale(controls, from_=50, to=2000, variable=self.refresh_time,
-                  orient="horizontal").pack(fill="x")
+        # Refresh rate (ms) Spinbox
+        ttk.Label(controls, text="Refresh rate (ms):").pack(anchor="w", pady=(6, 0))
+        ttk.Spinbox(
+            controls,
+            from_=50, to=2000,
+            increment=50,
+            textvariable=self.refresh_time,
+            width=10,
+            command=lambda: self.source.update_refresh(self.refresh_time.get())
+        ).pack(fill="x")
 
         ttk.Checkbutton(controls, text="Show labels", variable=self.show_labels).pack(
             anchor="w", pady=(6, 0))
@@ -179,9 +206,9 @@ class ADSBRadarApp:
                         variable=self.paused).pack(anchor="w", pady=(6, 0))
 
         ttk.Button(controls, text="Refresh view",
-                   command=self.refresh_now).pack(fill="x", pady=(6, 0))
+                   command=self.refresh_now).pack(anchor="w", fill="x", pady=(6, 0))
         ttk.Button(controls, text='Clear Trails',
-                   command=self.clear_trails).pack(fill='x', pady=(6, 0))
+                   command=self.clear_trails).pack(anchor="w", fill='x', pady=(6, 0))
 
         ttk.Label(controls, text="Altitude Legend:").pack(
             anchor="w", pady=(6, 0))
@@ -200,7 +227,7 @@ class ADSBRadarApp:
         alt_legend.create_text(135, 15, anchor="e",
                                text="40,000 ft", font=(None, 8))
 
-        ttk.Label(controls, text="Speed Legend:").pack(anchor="w", pady=(6, 4))
+        ttk.Label(controls, text="Speed Legend:").pack(anchor="w", pady=(6, 0))
         spd_legend = tk.Canvas(controls, width=140, height=30,
                                bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         spd_legend.pack(pady=(2, 6))
@@ -222,7 +249,7 @@ class ADSBRadarApp:
         self.status_label.pack(anchor="w")
         self.dump1090_alive = False
 
-        ttk.Label(controls, text="Last update:").pack(anchor="w", pady=(4, 0))
+        ttk.Label(controls, text="Last update:").pack(anchor="w", pady=(6, 0))
         self.status_freshness = ttk.Label(
             controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
@@ -360,9 +387,12 @@ class ADSBRadarApp:
         """Convert distance in kilometers to canvas pixels given max range."""
         margin = 10   # space between heading rose and border
         radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
-        effective_range = self.max_range.get()
-        px_per_km = radius_px / effective_range
-        return km * px_per_km
+        if self.max_range.get() > 0:
+            effective_range = self.max_range.get()
+            px_per_km = radius_px / effective_range
+            return km * px_per_km
+        else:
+            return km * radius_px
 
     def geo_to_canvas(self, lat, lon):
         """Transform geographic coordinates to canvas x,y and compute bearing/distance."""
