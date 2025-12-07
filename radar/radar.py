@@ -1,65 +1,16 @@
-"""
-ADS-B Radar
-Fetches data from dump1090 at http://localhost:8080/data.json and
-renders a radar-style view using tkinter Canvas.
-
-Features:
-    - Real bearing and position of detected planes
-    - Symbols for aircraft, rotor craft or unknown
-    - History trails per aircraft colored by altitude
-    - Tkinter GUI controls
-    - Click any aircraft icon to open a details popup with full info
-
-Dependencies:
-    - requests
-    - pillow (PIL)
-
-Run:
-    pip install requests pillow
-    python adsb_tk_radar_clickable.py
-"""
+#!/usr/bin/env python3
 
 import time
 import tkinter as tk
 from tkinter import ttk
 import math
-import json
-import os
 
 from datasource import Dump1090Source
 from aircraft import Aircrafts
 
-# ------------------- Configuration -------------------
-
-
-CONFIG_FILE = "./radar/config.json"
-DATA_URL = "http://localhost:8080/data.json"
-RADAR_LAT = 48.6833   # default receiver latitude
-RADAR_LON = 2.1333    # default receiver longitude
-REFRESH_MS = 1000     # update interval in milliseconds
-MAX_RANGE_KM = 200    # maximum radar range shown (km)
-CANVAS_SIZE = 800     # pixels (square canvas)
-TRAIL_MAX = 100       # default number of points in trail
-
 # ------------------- Utilities -------------------
-
-
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        print("[ADS-B Radar] Reading config file")
-        try:
-            with open(CONFIG_FILE, "r") as f:
-                data = json.load(f)
-                return data
-        except Exception:
-            print("[ADS-B Radar] Error reading config file")
-            return {}
-    else:
-        print("[ADS-B Radar] No config file")
-    return {}
-
-
 def haversine_km(lat1, lon1, lat2, lon2):
+    """Return haversine distance in kilometers between two lat/lon points."""
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -69,6 +20,7 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def bearing_deg(lat1, lon1, lat2, lon2):
+    """Return bearing in degrees from (lat1,lon1) -> (lat2,lon2)."""
     dlon = math.radians(lon2 - lon1)
     lat1r = math.radians(lat1)
     lat2r = math.radians(lat2)
@@ -80,28 +32,25 @@ def bearing_deg(lat1, lon1, lat2, lon2):
 
 
 def altitude_to_color(alt):
-    """
-    Map altitude (feet) to an RGB color string.
-    Low alt -> green
-    medium -> yellow
-    high -> red
-    unknown -> gray
+    """Map altitude (feet) to RGB hex color string.
+
+    Low alt -> green; medium -> yellow; high -> red; unknown -> gray.
     """
     if alt is None:
         return "#888888"
-    # clamp
+
+    # Clamp to ground
     if alt < 0:
         alt = 0
-    # define a reasonable scale: 0 ft -> 0 (green) ; 40000 -> 1 (red)
+
+    # Normalize 0..40000 ft → 0..1
     t = min(max(alt / 40000.0, 0.0), 1.0)
-    # produce a gradient green -> yellow -> orange -> red
+    
     if t < 0.5:
-        # green to yellow
         r = int(255 * (t * 2))
         g = 255
         b = 0
     else:
-        # yellow to red
         r = 255
         g = int(255 * (1 - (t - 0.5) * 2))
         b = 0
@@ -109,18 +58,13 @@ def altitude_to_color(alt):
 
 
 def speed_to_color(speed):
-    """
-    Map speed (knots) to a distinct RGB color scale.
-    Palette is different from altitude_to_color:
-    Slow -> Blue
-    Moderate -> Cyan
-    Fast -> Green
-    Very fast -> Orange
-    Extremely fast -> Red
-    """
+    """Map speed (knots) to a distinct color palette.
 
+    Slow -> Blue, moderate -> Cyan, fast -> Green, very fast -> Orange,
+    extremely fast -> Red. Unknown -> bluish gray.
+    """
     if speed is None:
-        return "#8888ff"    # unknown = bluish
+        return "#8888ff"
 
     # Clamp speed to reasonable range
     if speed < 0:
@@ -131,35 +75,25 @@ def speed_to_color(speed):
     # Normalize 0–600 kt → 0.0–1.0
     t = speed / 600.0
 
-    # Segmented gradient:
-    # 0.0–0.25: Blue → Cyan
-    # 0.25–0.50: Cyan → Green
-    # 0.50–0.75: Green → Orange
-    # 0.75–1.00: Orange → Red
-
     if t < 0.25:
-        # Blue (0,0,255) -> Cyan (0,255,255)
         f = t / 0.25
         r = 0
         g = int(255 * f)
         b = 255
 
     elif t < 0.50:
-        # Cyan (0,255,255) -> Green (0,255,0)
         f = (t - 0.25) / 0.25
         r = 0
         g = 255
         b = int(255 * (1 - f))
 
     elif t < 0.75:
-        # Green (0,255,0) -> Orange (255,165,0)
         f = (t - 0.50) / 0.25
         r = int(255 * f)
         g = int(255 - (90 * f))   # 255 → 165
         b = 0
 
     else:
-        # Orange (255,165,0) -> Red (255,0,0)
         f = (t - 0.75) / 0.25
         r = 255
         g = int(165 * (1 - f))
@@ -167,14 +101,20 @@ def speed_to_color(speed):
 
     return f"#{r:02x}{g:02x}{b:02x}"
 
-# ------------------- Main Application -------------------
 
-
+# ------------------- ADSBRadarApp -------------------
 class ADSBRadarApp:
-    def __init__(self, root):
+    """Main application class for the ADS-B radar display.
+
+    This class handles UI creation, periodic updates, rendering and
+    interactions with the datasource and aircraft collection.
+    """
+
+    def __init__(self, root, DATA_URL, RADAR_LAT, RADAR_LON, MAX_RANGE_KM, CANVAS_SIZE, TRAIL_MAX):
         self.root = root
         root.title("ADS-B Radar")
 
+        # --- UI state variables ---
         self.center_lat = tk.DoubleVar(value=RADAR_LAT)
         self.center_lon = tk.DoubleVar(value=RADAR_LON)
         self.max_range = tk.DoubleVar(value=MAX_RANGE_KM)
@@ -184,25 +124,33 @@ class ADSBRadarApp:
         self.timeline_minutes = tk.IntVar(value=5)
         self.refresh_time = tk.IntVar(value=1000)
 
+        # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
                                 height=CANVAS_SIZE, bg="#02121a")
         self.canvas.bind("<Configure>", self.on_canvas_resize)
         self.canvas.bind("<Button-1>", self.on_canvas_click)
+
+        # Internal cached canvas size
         self.canvas_width = CANVAS_SIZE
         self.canvas_height = CANVAS_SIZE
         self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        # Make the radar canvas expand when the window is resized
         self.root.grid_rowconfigure(0, weight=1)   # radar row expands
         self.root.grid_rowconfigure(1, weight=0)   # timeline row stays fixed
         self.root.grid_columnconfigure(0, weight=1)  # main canvas expands
         self.root.grid_columnconfigure(1, weight=0)  # controls do not expand
+
+        # Fullscreen keyboard shortcuts
         root.bind("<F11>", lambda e: root.attributes("-fullscreen", True))
         root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
-        # side controls
+        # --- Side controls ---
         controls = ttk.Frame(root, padding=(6, 6))
         controls.grid(row=0, column=1, sticky="ns")
 
-        ttk.Button(controls, text="Show data table", command=self.show_raw_table).pack(fill="x", pady=(8, 4))
+        ttk.Button(controls, text="Show data table",
+                   command=self.show_raw_table).pack(fill="x", pady=(8, 4))
 
         ttk.Label(controls, text="Center Latitude:").pack(anchor="w")
         ttk.Entry(controls, textvariable=self.center_lat).pack(fill="x")
@@ -220,7 +168,7 @@ class ADSBRadarApp:
         ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w")
         ttk.Scale(controls, from_=1, to=30, variable=self.timeline_minutes,
                   orient="horizontal", command=lambda v: self.update_timeline_max()).pack(fill="x")
-        
+
         ttk.Label(controls, text="Refresh rate (ms):").pack(anchor="w")
         ttk.Scale(controls, from_=50, to=2000, variable=self.refresh_time,
                   orient="horizontal").pack(fill="x")
@@ -244,12 +192,10 @@ class ADSBRadarApp:
 
         # Draw horizontal gradient (0 ft → 40,000 ft)
         for x in range(140):
-            # map x (0–139) to altitude (0–40000)
             alt = (x / 139) * 40000
             c = altitude_to_color(alt)
             alt_legend.create_line(x, 0, x, 30, fill=c)
 
-        # Tick labels
         alt_legend.create_text(5, 15, anchor="w", text="0 ft", font=(None, 8))
         alt_legend.create_text(135, 15, anchor="e",
                                text="40,000 ft", font=(None, 8))
@@ -265,7 +211,6 @@ class ADSBRadarApp:
             c = speed_to_color(spd)
             spd_legend.create_line(x, 0, x, 30, fill=c)
 
-        # Tick labels
         spd_legend.create_text(5, 15, anchor="w", text="0 kt", font=(None, 8))
         spd_legend.create_text(135, 15, anchor="e",
                                text="600 kt", font=(None, 8))
@@ -282,34 +227,35 @@ class ADSBRadarApp:
             controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
 
-        # ---- Timeline of plane counts ----
+        # ---- Timeline ----
         self.timeline_height = 40
         self.timeline_canvas = tk.Canvas(root, height=self.timeline_height,
-                                        bg="#11181c", highlightthickness=0)
+                                         bg="#11181c", highlightthickness=0)
         self.timeline_canvas.grid(row=1, column=0, columnspan=2, sticky="ew")
 
-        # Aircrafts count and timeline
         self.count_history = []     # [(timestamp, count), ...]
         self.max_history = 300      # keep last 300 samples (~5 min)
         self.last_timeline_update = 0
         self.timeline_refresh_sec = 5   # refresh every 5 seconds
 
-        # Aircrafts collection
+        # --- Aircraft collection ---
         self.aircraft_items = Aircrafts()
 
+        # --- Data source ---
+        self.source = Dump1090Source(DATA_URL, self.refresh_time.get())
+        self.source.start()
+
+        # --- UI ---
         # Draw static radar background once
         self.draw_background()
         self.running = True
-
-        # Data source
-        self.source = Dump1090Source(DATA_URL, self.refresh_time.get())
-        self.source.start()
 
         # Start GUI update loop
         self.schedule_update()
 
     # ------------------- GUI helpers -------------------
     def on_canvas_resize(self, event):
+        """Handle canvas resize events (debounced redraw)."""
         # update current canvas size
         self.canvas_width = event.width
         self.canvas_height = event.height
@@ -318,6 +264,7 @@ class ADSBRadarApp:
         self.draw_background()
 
     def schedule_update(self):
+        """Schedule periodic UI updates using tkinter.after()."""
         if not self.running:
             return
         self.update_frame()
@@ -325,6 +272,7 @@ class ADSBRadarApp:
         self.root.after(self.refresh_time.get(), self.schedule_update)
 
     def show_raw_table(self):
+        """Open a separate window showing raw dump1090 table data."""
         win = tk.Toplevel(self.root)
         win.title("Data Table")
         win.geometry("1000x500")
@@ -338,7 +286,7 @@ class ADSBRadarApp:
 
         columns = [
             "hex", "callsign", "registration", "lat", "lon",
-            "altitude", "speed", "track", "vert_rate", 
+            "altitude", "speed", "track", "vert_rate",
             "category", "type", "squawk", "last_seen"
         ]
 
@@ -363,8 +311,8 @@ class ADSBRadarApp:
             tree.heading(col, text=col.replace("_", " ").title())
             tree.column(col, width=80, anchor="center")
 
-        # ---- REFRESH FUNCTION ----
         def refresh():
+            """Refresh the contents of the data table periodically."""
             if not win.winfo_exists():
                 return
 
@@ -382,7 +330,8 @@ class ADSBRadarApp:
                     ac.get("registration") or ac.get("reg") or "",
                     ac.get("lat") or "",
                     ac.get("lon") or "",
-                    ac.get("altitude") or ac.get("alt_baro") or ac.get("alt_geom") or "",
+                    ac.get("altitude") or ac.get(
+                        "alt_baro") or ac.get("alt_geom") or "",
                     ac.get("speed") or ac.get("groundspeed") or "",
                     ac.get("track") or ac.get("heading") or "",
                     ac.get("vert_rate") or "",
@@ -398,16 +347,17 @@ class ADSBRadarApp:
         refresh()
 
     def refresh_now(self):
+        """Force a redraw of background and frame update."""
         self.draw_background()
         self.update_frame()
 
     def clear_trails(self):
+        """Erase all stored trails and canvas trail objects."""
         self.aircraft_items.clear_trails()
         self.canvas.delete('trails')
 
     def km_to_pixels(self, km):
-        # converts kilometers (on display) to canvas pixels based on max_range
-        # Use the largest possible radius that fits in the resized canvas
+        """Convert distance in kilometers to canvas pixels given max range."""
         margin = 10   # space between heading rose and border
         radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
         effective_range = self.max_range.get()
@@ -415,33 +365,35 @@ class ADSBRadarApp:
         return km * px_per_km
 
     def geo_to_canvas(self, lat, lon):
-        # compute distance and bearing, then convert to canvas coords
-        dkm = haversine_km(self.center_lat.get(), self.center_lon.get(), lat, lon)
-        brg = bearing_deg(self.center_lat.get(), self.center_lon.get(), lat, lon)
-        
+        """Transform geographic coordinates to canvas x,y and compute bearing/distance."""
+        dkm = haversine_km(self.center_lat.get(),
+                           self.center_lon.get(), lat, lon)
+        brg = bearing_deg(self.center_lat.get(),
+                          self.center_lon.get(), lat, lon)
+
         # polar to cartesian: we use angle where 0=North, 90=East
         angle_rad = math.radians(brg)
 
         # Convert km to px only using km_to_pixels()
         dist_px = self.km_to_pixels(dkm)
 
-        x = self.canvas_width/2  + dist_px * math.sin(angle_rad)
+        x = self.canvas_width/2 + dist_px * math.sin(angle_rad)
         y = self.canvas_height/2 - dist_px * math.cos(angle_rad)
 
         return x, y, dkm, brg
 
     # ------------------- Radar rendering -------------------
     def draw_background(self):
+        """Draw static radar background: rings, center marker and heading rose."""
         self.canvas.delete("bg")
 
         cx = self.canvas_width // 2
         cy = self.canvas_height // 2
 
-        # Use shortest canvas dimension for round radar
         margin = 10   # space between heading rose and border
         radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
 
-        # ----- RANGE RINGS -----
+        # Range rings and labels
         for i in range(1, 5):
             r = radius_px * (i / 4)
             self.canvas.create_oval(
@@ -450,7 +402,6 @@ class ADSBRadarApp:
                 tags=("bg",)
             )
 
-            # Range label
             km = int(self.max_range.get() * i / 4)
             self.canvas.create_text(
                 cx + 5,
@@ -462,7 +413,7 @@ class ADSBRadarApp:
                 tags=("bg",)
             )
 
-        # ----- CENTER MARKER -----
+        # Center marker
         self.canvas.create_oval(
             cx - 4, cy - 4, cx + 4, cy + 4,
             outline="#00ffaa",
@@ -470,7 +421,7 @@ class ADSBRadarApp:
             tags=("bg",)
         )
 
-        # ----- HEADING ROSE -----
+        # Heading rose
         for deg in range(0, 360, 10):
             angle = math.radians(deg)
             sin_a = math.sin(angle)
@@ -490,16 +441,16 @@ class ADSBRadarApp:
             y1 = cy - r1 * cos_a
 
             self.canvas.create_line(x0, y0, x1, y1,
-                fill="#3dd6c6" if deg % 30 == 0 else "#1a9494",
-                width=2 if deg % 30 == 0 else 1, tags=("bg",),
-                smooth=True, splinesteps=24
-            )
+                                    fill="#3dd6c6" if deg % 30 == 0 else "#1a9494",
+                                    width=2 if deg % 30 == 0 else 1, tags=("bg",),
+                                    smooth=True, splinesteps=24
+                                    )
 
             # Cardinal letters (N/E/S/W)
             if deg in (0, 90, 180, 270):
                 lx = cx + (radius_px * 0.90) * sin_a
                 ly = cy - (radius_px * 0.90) * cos_a
-                letter = {0:"N", 90:"E", 180:"S", 270:"W"}[deg]
+                letter = {0: "N", 90: "E", 180: "S", 270: "W"}[deg]
 
                 self.canvas.create_text(
                     lx, ly,
@@ -510,6 +461,7 @@ class ADSBRadarApp:
                 )
 
     def update_frame(self):
+        """Update aircraft data and redraw dynamic canvas items."""
         # Connection status
         if self.source.alive:
             self.status_label.configure(text="Connected", foreground="green")
@@ -518,15 +470,16 @@ class ADSBRadarApp:
 
         # Last updated
         if self.source.alive:
-            self.status_freshness.configure(text=self.source.last_seen(), foreground="green")
+            self.status_freshness.configure(
+                text=self.source.last_seen(), foreground="green")
         else:
             self.status_freshness.configure(text="No data", foreground="red")
 
         # Pause
         if self.paused.get():
             return
-        
-        # Clear view 
+
+        # Clear view
         self.canvas.delete("aircraft")
         self.canvas.delete("trails")
 
@@ -535,7 +488,7 @@ class ADSBRadarApp:
         self.aircraft_items.update_aircrafts(data, self.trail_length.get())
         self.aircraft_items.clean_data()
 
-        # process aircrafts
+        # Process aircrafts
         aircrafts = self.aircraft_items.get_aircrafts()
         for hexid in aircrafts:
             aircraft = aircrafts[hexid]
@@ -544,7 +497,7 @@ class ADSBRadarApp:
             aircraft.update_compute_data(brg, dkm)
             aircraft.update_trail(x, y)
 
-            # draw trail
+            # Draw trail
             trail = aircraft.trail
             n = len(trail)
             if n > 1 and self.trail_length.get() > 0:
@@ -553,7 +506,8 @@ class ADSBRadarApp:
                     bx, by, alt2 = trail[idx]
                     seg_age = idx/max(1, n)
                     width = max(1, int(3*(1-seg_age)))
-                    # interpolate color between start and end of segment
+
+                    # Interpolate color between start and end of segment
                     col1 = altitude_to_color(alt1)
                     col2 = altitude_to_color(alt2)
                     r = int(int(col1[1:3], 16)*(1-seg_age) +
@@ -563,18 +517,18 @@ class ADSBRadarApp:
                     b = int(int(col1[5:7], 16)*(1-seg_age) +
                             int(col2[5:7], 16)*seg_age)
                     fade_color = f"#{r:02x}{g:02x}{b:02x}"
-                    self.canvas.create_line(ax, ay, bx, by, fill=fade_color, 
+                    self.canvas.create_line(ax, ay, bx, by, fill=fade_color,
                                             width=width, smooth=True, splinesteps=24, tags=("trails",))
 
-            # draw aircraft point
+            # Draw aircraft point
             color_inner = "#ffffff"
             color_outer = "#ffffff"
             if aircraft.category.startswith("A"):     # Fixed-wing
                 color_outer = "#ffc400"
             elif aircraft.category.startswith("B"):   # Rotorcraft
                 color_outer = "#e5ff00"
-            else:
-                color_outer = "#d3d3d3"    # Unknown
+            else:                                     # Unknown
+                color_outer = "#d3d3d3"    
             canvas_id = self.canvas.create_oval(
                 x - 4, y - 4, x + 4, y + 4,
                 outline=color_outer,
@@ -593,10 +547,8 @@ class ADSBRadarApp:
             # Heading / speed vector
             base_len = 10
             spd = (aircraft.speed or 0)
-
-            # speed extends line slightly
-            vector_len = base_len + spd * 0.07
-
+            
+            vector_len = base_len + spd * 0.07 # Speed extends line slightly
             vect_speed_color = speed_to_color(spd)
 
             angle_rad = math.radians(aircraft.track)
@@ -615,7 +567,7 @@ class ADSBRadarApp:
                 self.canvas.create_text(
                     x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
 
-        # ---- Update timeline count ----
+        # Update timeline count
         aircrafts_count = self.source.aircrafts_count()
         timestamp = time.time()
         self.count_history.append((timestamp, aircrafts_count))
@@ -626,8 +578,9 @@ class ADSBRadarApp:
             self.draw_timeline()
             self.last_timeline_update = timestamp
 
-    # ------------------- Timeline draw
+    # ------------------- Timeline Rendering -------------------
     def update_timeline_max(self):
+        """Update max history variable to adapt the timeline size and data."""
         minutes = self.timeline_minutes.get()
         # Assuming your update_frame runs once per second:
         self.max_history = minutes * 60
@@ -637,6 +590,7 @@ class ADSBRadarApp:
             self.count_history = self.count_history[-self.max_history:]
 
     def draw_timeline(self):
+        """Drawing dynamic timeline item."""
         c = self.timeline_canvas
         c.delete("all")
 
@@ -656,37 +610,36 @@ class ADSBRadarApp:
         if n <= 1:
             return
 
-        # draw markers
-        # Determine real timeline duration from timestamps
+        # Draw markers
         timestamps = [t for (t, _) in self.count_history]
         t_start = timestamps[0]
-        t_end   = timestamps[-1]
+        t_end = timestamps[-1]
+        
         real_duration_sec = max(t_end - t_start, 1)   # avoid zero
-
         minutes = real_duration_sec / 60
 
-        # desired ~7 labels
         desired_markers = 7
         step_min = max(1, round(minutes / desired_markers))
 
-        # recalc number
+        # Recalc number
         num_markers = max(1, int(minutes // step_min))
         for i in range(num_markers + 1):
-            # compute the timestamp this marker represents
+            # Compute the timestamp this marker represents
             marker_minutes_ago = i * step_min
             marker_time = t_end - marker_minutes_ago * 60
-            
+
             if marker_time < t_start:
                 continue
 
-            # position of marker on canvas: normalized time
+            # Position of marker on canvas: normalized time
             ratio = (marker_time - t_start) / real_duration_sec
             x = int(ratio * w)
 
-            # line
-            c.create_line(x, 0, x, h, fill="#333", width=1, smooth=True, splinesteps=24)
+            # Line
+            c.create_line(x, 0, x, h, fill="#333", width=1,
+                          smooth=True, splinesteps=24)
 
-            # label
+            # Label
             if marker_minutes_ago == 0:
                 label = "now"
             else:
@@ -700,9 +653,7 @@ class ADSBRadarApp:
                 font=("Arial", 8)
             )
 
-        # ---------------------------------------------------------
-        # DRAW SPARKLINE (Aircraft Count Line)
-        # ---------------------------------------------------------
+        # Draw sparkline
         step_x = w / (n - 1)
         points = []
 
@@ -714,17 +665,19 @@ class ADSBRadarApp:
         for i in range(len(points) - 1):
             x1, y1 = points[i]
             x2, y2 = points[i + 1]
-            c.create_line(x1, y1, x2, y2, fill="#4ebbc9", width=2, smooth=True, splinesteps=24)
+            c.create_line(x1, y1, x2, y2, fill="#4ebbc9",
+                          width=2, smooth=True, splinesteps=24)
 
         # Latest value label
         now_count = counts[-1]
         c.create_text(5, 5, anchor="nw",
-                    text=f"{now_count} aircrafts",
-                    fill="#4ebbc9",
-                    font=("Arial", 9, "bold"))
+                      text=f"{now_count} aircrafts",
+                      fill="#4ebbc9",
+                      font=("Arial", 9, "bold"))
 
-    # ------------------- Aircraft click -------------------
+    # ------------------- Aircraft click and popup -------------------
     def on_canvas_click(self, event):
+        """Handle clicks on the radar canvas and open aircraft popup if clicked."""
         radius = 8
         items = self.canvas.find_overlapping(event.x-radius, event.y-radius,
                                              event.x+radius, event.y+radius)
@@ -806,50 +759,7 @@ class ADSBRadarApp:
         # Start updating loop
         refresh_popup()
 
-    # ------------------- Cleanup -------------------
-
+    # ------------------- Stop -------------------
     def stop(self):
+        """Stop the app main loop and any background operations."""
         self.running = False
-
-
-# ------------------- Run -------------------
-if __name__ == "__main__":
-    try:
-        print("[ADS-B Radar] Launching ADS-B Radar")
-
-        # load config.json
-        cfg = load_config()
-        if "data_url" in cfg:
-            DATA_URL = cfg["data_url"]
-        if "radar_lat" in cfg:
-            RADAR_LAT = float(cfg["radar_lat"])
-        if "radar_lon" in cfg:
-            RADAR_LON = float(cfg["radar_lon"])
-        if "max_range_km" in cfg:
-            MAX_RANGE_KM = int(cfg["max_range_km"])
-        if "canvas_size" in cfg:
-            CANVAS_SIZE = int(cfg["canvas_size"])
-        if "trail_max" in cfg:
-            TRAIL_MAX = int(cfg["trail_max"])
-
-        print("[ADS-B Radar] **** Setup ****")
-        print("[ADS-B Radar] Dump1090 URL: " + DATA_URL)
-        print("[ADS-B Radar] Radar lat: " + str(RADAR_LAT))
-        print("[ADS-B Radar] Radar long: " + str(RADAR_LON))
-        print("[ADS-B Radar] Max range (km): " + str(MAX_RANGE_KM))
-        print("[ADS-B Radar] Canvas size: " + str(CANVAS_SIZE))
-        print("[ADS-B Radar] Trail max: " + str(TRAIL_MAX))
-        print("[ADS-B Radar] ****")
-
-        root = tk.Tk()
-        app = ADSBRadarApp(root)
-
-        def on_close():
-            app.stop()
-            root.destroy()
-
-        root.protocol("WM_DELETE_WINDOW", on_close)
-        root.mainloop()
-
-    except Exception as e:
-        print("[ADS-B Radar] Error :", e)

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-
 from collections import deque
 import time
 
+# ------------------- Aircrafts -------------------
 class Aircrafts:
     """Represents collection of aircrafts"""
 
@@ -12,6 +12,7 @@ class Aircrafts:
         self.canvas_ids = {}
 
     def update_aircrafts(self, data, max_trails):
+        """Update planes from received data."""
         for ac in data:
             if not (ac.get("lat") and ac.get("lon")):
                 continue
@@ -25,7 +26,7 @@ class Aircrafts:
                 self.aircrafts[hexid] = aircraft
     
     def clean_data(self):
-        """Remove aircraft too far, invalid, or stale."""
+        """Remove aircraft too old, invalid, or stale."""
         to_delete = []
 
         for hexid in list(self.aircrafts.keys()):
@@ -51,21 +52,28 @@ class Aircrafts:
             del self.aircrafts[hexid]
     
     def get_aircrafts(self):
+        """Get all aircrafts."""
         return self.aircrafts
     
     def get_aircraft(self, hex):
+        """Get aircraft from it's hexid parameter."""
         return self.aircrafts[hex]
     
     def get_canvas_ids(self):
+        """Get all canvas ids created in UI."""
         return self.canvas_ids
     
     def set_canvas_id(self, hex, canvas_id):
+        """Set a canvas id to a hexid parameter. Used to associate plane to a rendered object."""
         self.canvas_ids[hex] = canvas_id
     
     def clear_trails(self):
+        """Clear all trails."""
         for hexid in self.aircrafts.keys():
             self.aircrafts[hexid].trail.clear()
 
+
+# ------------------- Aircraft -------------------
 class Aircraft:
     """Represents one aircraft and its history/trail"""
 
@@ -77,14 +85,13 @@ class Aircraft:
 
         self.update_from_raw(raw)
 
-        # Renderer-filled values
         self.distance_km = 0
         self.bearing_deg = 0
 
-        # Trail (renderer draws it)
         self.trail = deque(maxlen=max_trails)
 
     def update_from_raw(self, raw):
+        """Update airplane data."""
         self.lat = raw.get("lat")
         self.lon = raw.get("lon")
         self.altitude = raw.get("altitude") or raw.get("alt_baro") or raw.get("alt_geom") or raw.get("alt")
@@ -95,8 +102,10 @@ class Aircraft:
         self.last_behavior = time.time()
     
     def update_compute_data(self, bearing, distance):
+        """Update computed data."""
         self.bearing_deg = bearing
         self.distance_km = distance
     
     def update_trail(self, x, y):
+        """Update plane's trail."""
         self.trail.append((x, y, self.altitude))

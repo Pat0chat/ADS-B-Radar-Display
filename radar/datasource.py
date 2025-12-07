@@ -1,9 +1,16 @@
+#!/usr/bin/env python3
+
 import threading
 import time
-
 import requests
 
+# ------------------- Dump1090Source -------------------
 class Dump1090Source:
+    """Dump1090Source class fetching data from dump1090 API.
+
+    This class handles datasource creation from URL API, periodic updates through separate thread,
+    data snapshot, and status indicators.
+    """
 
     def __init__(self, url, refresh):
         self.url = url
@@ -15,19 +22,24 @@ class Dump1090Source:
         self.lock = threading.Lock()
 
     def start(self):
+        """Start the thread fetching data from dump1090 API."""
         self.running = True
         threading.Thread(target=self._loop, daemon=True).start()
 
     def stop(self):
+        """Stop the thread fetching data from dump1090 API."""
         self.running = False
 
     def update_refresh(self, refresh):
+        """Update refresh rate of fetching data from dump1090 API."""
         self.refresh = round(refresh / 1000, 2)
 
     def last_seen(self):
+        """Get data last fetching time."""
         return self.last_seen_time
     
     def aircrafts_count(self):
+        """Get number of planes received from dump1090 API."""
         aircrafts_count = 0
 
         if self.latest_data:
@@ -36,6 +48,7 @@ class Dump1090Source:
         return aircrafts_count
 
     def _loop(self):
+        """Thread loop fetching data from dump1090 API."""
         while self.running:
             try:
                 r = requests.get(self.url, timeout=1.0)
@@ -48,10 +61,12 @@ class Dump1090Source:
             time.sleep(self.refresh)
 
     def _process(self, raw_list):
+        """Store last received data from dump1090 API."""
         self.last_seen_time = time.strftime("%H:%M:%S", time.localtime())
         with self.lock:
             self.latest_data = raw_list
 
     def snapshot(self):
+        """Get last stored data."""
         with self.lock:
             return self.latest_data.copy()
