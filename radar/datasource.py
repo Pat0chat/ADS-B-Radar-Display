@@ -21,6 +21,9 @@ class Dump1090Source:
     def stop(self):
         self.running = False
 
+    def update_refresh(self, refresh):
+        self.refresh = round(refresh / 1000, 2)
+
     def last_seen(self):
         return self.last_seen_time
     

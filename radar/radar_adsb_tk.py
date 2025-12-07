@@ -182,6 +182,7 @@ class ADSBRadarApp:
         self.paused = tk.BooleanVar(value=False)
         self.show_labels = tk.BooleanVar(value=True)
         self.timeline_minutes = tk.IntVar(value=5)
+        self.refresh_time = tk.IntVar(value=1000)
 
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
                                 height=CANVAS_SIZE, bg="#02121a")
@@ -219,6 +220,10 @@ class ADSBRadarApp:
         ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w")
         ttk.Scale(controls, from_=1, to=30, variable=self.timeline_minutes,
                   orient="horizontal", command=lambda v: self.update_timeline_max()).pack(fill="x")
+        
+        ttk.Label(controls, text="Refresh rate (ms):").pack(anchor="w")
+        ttk.Scale(controls, from_=50, to=2000, variable=self.refresh_time,
+                  orient="horizontal").pack(fill="x")
 
         ttk.Checkbutton(controls, text="Show labels", variable=self.show_labels).pack(
             anchor="w", pady=(6, 0))
@@ -297,7 +302,7 @@ class ADSBRadarApp:
         self.running = True
 
         # Data source
-        self.source = Dump1090Source(DATA_URL, REFRESH_MS)
+        self.source = Dump1090Source(DATA_URL, self.refresh_time.get())
         self.source.start()
 
         # Start GUI update loop
@@ -316,7 +321,8 @@ class ADSBRadarApp:
         if not self.running:
             return
         self.update_frame()
-        self.root.after(REFRESH_MS, self.schedule_update)
+        self.source.update_refresh(self.refresh_time.get())
+        self.root.after(self.refresh_time.get(), self.schedule_update)
 
     def show_raw_table(self):
         win = tk.Toplevel(self.root)
@@ -458,15 +464,9 @@ class ADSBRadarApp:
 
         # ----- CENTER MARKER -----
         self.canvas.create_oval(
-            cx - 6, cy - 6, cx + 6, cy + 6,
+            cx - 4, cy - 4, cx + 4, cy + 4,
             outline="#00ffaa",
             width=2,
-            tags=("bg",)
-        )
-        self.canvas.create_oval(
-            cx - 2, cy - 2, cx + 2, cy + 2,
-            fill="#00ffaa",
-            outline="",
             tags=("bg",)
         )
 
@@ -489,11 +489,10 @@ class ADSBRadarApp:
             x1 = cx + r1 * sin_a
             y1 = cy - r1 * cos_a
 
-            self.canvas.create_line(
-                x0, y0, x1, y1,
+            self.canvas.create_line(x0, y0, x1, y1,
                 fill="#3dd6c6" if deg % 30 == 0 else "#1a9494",
-                width=2 if deg % 30 == 0 else 1,
-                tags=("bg",)
+                width=2 if deg % 30 == 0 else 1, tags=("bg",),
+                smooth=True, splinesteps=24
             )
 
             # Cardinal letters (N/E/S/W)
@@ -564,8 +563,8 @@ class ADSBRadarApp:
                     b = int(int(col1[5:7], 16)*(1-seg_age) +
                             int(col2[5:7], 16)*seg_age)
                     fade_color = f"#{r:02x}{g:02x}{b:02x}"
-                    self.canvas.create_line(
-                        ax, ay, bx, by, fill=fade_color, width=width, tags=("trails",))
+                    self.canvas.create_line(ax, ay, bx, by, fill=fade_color, 
+                                            width=width, smooth=True, splinesteps=24, tags=("trails",))
 
             # draw aircraft point
             color_inner = "#ffffff"
@@ -605,14 +604,9 @@ class ADSBRadarApp:
             x2 = x + vector_len * math.sin(angle_rad)
             y2 = y - vector_len * math.cos(angle_rad)
 
-            self.canvas.create_line(
-                x, y, x2, y2,
-                fill=vect_speed_color,
-                width=1,
-                arrow=tk.LAST,
-                arrowshape=(8, 10, 4),
-                tags=("aircraft",)
-            )
+            self.canvas.create_line(x, y, x2, y2, fill=vect_speed_color, width=1,
+                                    arrow=tk.LAST, arrowshape=(8, 10, 4), tags=("aircraft",),
+                                    smooth=True, splinesteps=24)
 
             # Attach label (as separate canvas items but tagged 'aircraft' too)
             if self.show_labels.get():
@@ -690,7 +684,7 @@ class ADSBRadarApp:
             x = int(ratio * w)
 
             # line
-            c.create_line(x, 0, x, h, fill="#333", width=1)
+            c.create_line(x, 0, x, h, fill="#333", width=1, smooth=True, splinesteps=24)
 
             # label
             if marker_minutes_ago == 0:
@@ -720,7 +714,7 @@ class ADSBRadarApp:
         for i in range(len(points) - 1):
             x1, y1 = points[i]
             x2, y2 = points[i + 1]
-            c.create_line(x1, y1, x2, y2, fill="#4ebbc9", width=2)
+            c.create_line(x1, y1, x2, y2, fill="#4ebbc9", width=2, smooth=True, splinesteps=24)
 
         # Latest value label
         now_count = counts[-1]
@@ -831,8 +825,6 @@ if __name__ == "__main__":
             RADAR_LAT = float(cfg["radar_lat"])
         if "radar_lon" in cfg:
             RADAR_LON = float(cfg["radar_lon"])
-        if "refresh_ms" in cfg:
-            REFRESH_MS = int(cfg["refresh_ms"])
         if "max_range_km" in cfg:
             MAX_RANGE_KM = int(cfg["max_range_km"])
         if "canvas_size" in cfg:
@@ -844,7 +836,6 @@ if __name__ == "__main__":
         print("[ADS-B Radar] Dump1090 URL: " + DATA_URL)
         print("[ADS-B Radar] Radar lat: " + str(RADAR_LAT))
         print("[ADS-B Radar] Radar long: " + str(RADAR_LON))
-        print("[ADS-B Radar] Refresh: " + str(REFRESH_MS))
         print("[ADS-B Radar] Max range (km): " + str(MAX_RANGE_KM))
         print("[ADS-B Radar] Canvas size: " + str(CANVAS_SIZE))
         print("[ADS-B Radar] Trail max: " + str(TRAIL_MAX))

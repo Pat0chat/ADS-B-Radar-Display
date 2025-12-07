@@ -2,7 +2,6 @@
     "data_url": "http://localhost:8080/data.json",
     "radar_lat": 48.6833,
     "radar_lon": 2.1333,
-    "refresh_ms": 1000,
     "max_range_km": 200,
     "canvas_size": 800,
     "trail_max": 120
