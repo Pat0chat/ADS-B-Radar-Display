@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import random
 import threading
 import time
+import math
 
 from aircraft import Aircraft
 
@@ -26,11 +28,21 @@ class Simulator:
 
     def run_loop(self):
         last = time.time()
+        last_change = last
         while True:
-            dt = time.time() - last
-            last = time.time()
+            t = time.time()
+            dt = t - last
+            last = t
 
             if self.running:
+                # every 60 seconds, maybe change aircraft count
+                if t - last_change > 60:
+                    last_change = t
+                    if random.random() < 0.5:
+                        self.num_aircraft += 1
+                    else:
+                        self.num_aircraft = max(1, self.num_aircraft - 1)
+
                 with self.lock:
                     for ac in self.aircraft:
                         ac.step(dt)

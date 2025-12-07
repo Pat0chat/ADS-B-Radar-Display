@@ -19,6 +19,7 @@ Run:
     python adsb_tk_radar_clickable.py
 """
 
+import time
 import tkinter as tk
 from tkinter import ttk
 import math
@@ -180,6 +181,7 @@ class ADSBRadarApp:
         self.trail_length = tk.IntVar(value=TRAIL_MAX)
         self.paused = tk.BooleanVar(value=False)
         self.show_labels = tk.BooleanVar(value=True)
+        self.timeline_minutes = tk.IntVar(value=5)
 
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
                                 height=CANVAS_SIZE, bg="#02121a")
@@ -188,8 +190,10 @@ class ADSBRadarApp:
         self.canvas_width = CANVAS_SIZE
         self.canvas_height = CANVAS_SIZE
         self.canvas.grid(row=0, column=0, sticky="nsew")
-        root.grid_columnconfigure(0, weight=1)
-        root.grid_rowconfigure(0, weight=1)
+        self.root.grid_rowconfigure(0, weight=1)   # radar row expands
+        self.root.grid_rowconfigure(1, weight=0)   # timeline row stays fixed
+        self.root.grid_columnconfigure(0, weight=1)  # main canvas expands
+        self.root.grid_columnconfigure(1, weight=0)  # controls do not expand
         root.bind("<F11>", lambda e: root.attributes("-fullscreen", True))
         root.bind("<Escape>", lambda e: root.attributes("-fullscreen", False))
 
@@ -211,6 +215,10 @@ class ADSBRadarApp:
         ttk.Label(controls, text="Trail length:").pack(anchor="w", pady=(6, 0))
         ttk.Scale(controls, from_=0, to=200, variable=self.trail_length,
                   orient="horizontal").pack(fill="x")
+
+        ttk.Label(controls, text="Timeline (minutes):").pack(anchor="w")
+        ttk.Scale(controls, from_=1, to=30, variable=self.timeline_minutes,
+                  orient="horizontal", command=lambda v: self.update_timeline_max()).pack(fill="x")
 
         ttk.Checkbutton(controls, text="Show labels", variable=self.show_labels).pack(
             anchor="w", pady=(6, 0))
@@ -269,10 +277,17 @@ class ADSBRadarApp:
             controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
 
-        ttk.Label(controls, text="Aircraft count:").pack(
-            anchor="w", pady=(4, 0))
-        self.status_count = ttk.Label(controls, text="0", foreground="orange")
-        self.status_count.pack(anchor="w")
+        # ---- Timeline of plane counts ----
+        self.timeline_height = 40
+        self.timeline_canvas = tk.Canvas(root, height=self.timeline_height,
+                                        bg="#11181c", highlightthickness=0)
+        self.timeline_canvas.grid(row=1, column=0, columnspan=2, sticky="ew")
+
+        # Aircrafts count and timeline
+        self.count_history = []     # [(timestamp, count), ...]
+        self.max_history = 300      # keep last 300 samples (~5 min)
+        self.last_timeline_update = 0
+        self.timeline_refresh_sec = 5   # refresh every 5 seconds
 
         # Aircrafts collection
         self.aircraft_items = Aircrafts()
@@ -508,13 +523,6 @@ class ADSBRadarApp:
         else:
             self.status_freshness.configure(text="No data", foreground="red")
 
-        # Aircraft count
-        aircrafts_count = self.source.aircrafts_count()
-        if aircrafts_count > 0 :
-            self.status_count.configure(text=str(aircrafts_count), foreground="green")
-        else:
-            self.status_count.configure(text="--", foreground="gray")
-
         # Pause
         if self.paused.get():
             return
@@ -526,7 +534,7 @@ class ADSBRadarApp:
         # Get data and update aircrafts
         data = self.source.snapshot()
         self.aircraft_items.update_aircrafts(data, self.trail_length.get())
-        self.aircraft_items.clean_data(self.max_range.get())
+        self.aircraft_items.clean_data()
 
         # process aircrafts
         aircrafts = self.aircraft_items.get_aircrafts()
@@ -612,6 +620,114 @@ class ADSBRadarApp:
                 lab_txt = f"{label}\n{int(dkm)} km {aircraft.altitude or '?'} ft"
                 self.canvas.create_text(
                     x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
+
+        # ---- Update timeline count ----
+        aircrafts_count = self.source.aircrafts_count()
+        timestamp = time.time()
+        self.count_history.append((timestamp, aircrafts_count))
+        if len(self.count_history) > self.max_history:
+            self.count_history.pop(0)
+
+        if timestamp - self.last_timeline_update >= self.timeline_refresh_sec:
+            self.draw_timeline()
+            self.last_timeline_update = timestamp
+
+    # ------------------- Timeline draw
+    def update_timeline_max(self):
+        minutes = self.timeline_minutes.get()
+        # Assuming your update_frame runs once per second:
+        self.max_history = minutes * 60
+
+        # Ensure history doesn’t grow too large
+        if len(self.count_history) > self.max_history:
+            self.count_history = self.count_history[-self.max_history:]
+
+    def draw_timeline(self):
+        c = self.timeline_canvas
+        c.delete("all")
+
+        if not self.count_history:
+            return
+
+        # Canvas size
+        w = c.winfo_width()
+        h = self.timeline_height
+
+        # Extract counts
+        counts = [cnt for (_, cnt) in self.count_history]
+        max_count = max(counts) if counts else 1
+        max_count = max(max_count, 1)
+
+        n = len(counts)
+        if n <= 1:
+            return
+
+        # draw markers
+        # Determine real timeline duration from timestamps
+        timestamps = [t for (t, _) in self.count_history]
+        t_start = timestamps[0]
+        t_end   = timestamps[-1]
+        real_duration_sec = max(t_end - t_start, 1)   # avoid zero
+
+        minutes = real_duration_sec / 60
+
+        # desired ~7 labels
+        desired_markers = 7
+        step_min = max(1, round(minutes / desired_markers))
+
+        # recalc number
+        num_markers = max(1, int(minutes // step_min))
+        for i in range(num_markers + 1):
+            # compute the timestamp this marker represents
+            marker_minutes_ago = i * step_min
+            marker_time = t_end - marker_minutes_ago * 60
+            
+            if marker_time < t_start:
+                continue
+
+            # position of marker on canvas: normalized time
+            ratio = (marker_time - t_start) / real_duration_sec
+            x = int(ratio * w)
+
+            # line
+            c.create_line(x, 0, x, h, fill="#333", width=1)
+
+            # label
+            if marker_minutes_ago == 0:
+                label = "now"
+            else:
+                label = f"{marker_minutes_ago}m"
+
+            c.create_text(
+                x + 2, h - 2,
+                text=label,
+                anchor="se",
+                fill="#888",
+                font=("Arial", 8)
+            )
+
+        # ---------------------------------------------------------
+        # DRAW SPARKLINE (Aircraft Count Line)
+        # ---------------------------------------------------------
+        step_x = w / (n - 1)
+        points = []
+
+        for i, v in enumerate(counts):
+            x = int(i * step_x)
+            y = int(h - (v / max_count) * (h - 5))
+            points.append((x, y))
+
+        for i in range(len(points) - 1):
+            x1, y1 = points[i]
+            x2, y2 = points[i + 1]
+            c.create_line(x1, y1, x2, y2, fill="#4ebbc9", width=2)
+
+        # Latest value label
+        now_count = counts[-1]
+        c.create_text(5, 5, anchor="nw",
+                    text=f"{now_count} aircrafts",
+                    fill="#4ebbc9",
+                    font=("Arial", 9, "bold"))
 
     # ------------------- Aircraft click -------------------
     def on_canvas_click(self, event):

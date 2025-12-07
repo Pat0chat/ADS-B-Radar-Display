@@ -2,12 +2,12 @@
 
 
 from collections import deque
+import time
 
 class Aircrafts:
     """Represents collection of aircrafts"""
 
     def __init__(self):
-        self.seen_hexes = set()
         self.aircrafts = {}
         self.canvas_ids = {}
 
@@ -17,7 +17,6 @@ class Aircrafts:
                 continue
 
             hexid = ac.get("hex") or ac.get("icao24") or ac.get("flight") or str(ac.get("id", ""))
-            self.seen_hexes.add(hexid)
 
             if hexid in self.aircrafts:
                 self.aircrafts[hexid].update_from_raw(ac)
@@ -25,20 +24,20 @@ class Aircrafts:
                 aircraft = Aircraft(hexid, ac, max_trails)
                 self.aircrafts[hexid] = aircraft
     
-    def clean_data(self, max_range):
+    def clean_data(self):
         """Remove aircraft too far, invalid, or stale."""
         to_delete = []
 
         for hexid in list(self.aircrafts.keys()):
             ac = self.aircrafts[hexid]
 
-            # Remove unseen plane
-            if hexid not in self.seen_hexes:
+            # Remove aircraft missing coordinates
+            if ac.lat is None or ac.lon is None:
                 to_delete.append(hexid)
                 continue
 
-            # Remove aircraft missing coordinates
-            if ac.lat is None or ac.lon is None:
+            # Remove airplane with no behavior for a long time
+            if time.time() - ac.last_behavior > 60:
                 to_delete.append(hexid)
                 continue
 
@@ -93,6 +92,7 @@ class Aircraft:
         self.track = raw.get("track") or raw.get("heading") or 0
         self.vert_rate = raw.get("vert_rate") or 0
         self.last_seen = raw.get("seen") or raw.get("seen_pos") or 0
+        self.last_behavior = time.time()
     
     def update_compute_data(self, bearing, distance):
         self.bearing_deg = bearing
