@@ -100,3 +100,24 @@ class OSMSource:
             return Image.open(io.BytesIO(data))
         except Exception:
             return None
+        
+    def compute_osm_zoom(self, lat, max_range, width):
+        """
+        Dynamically compute OSM tile zoom level so the displayed map
+        roughly matches the radar max range (km).
+        """
+
+        width_px = max(width, 1)
+
+        # Target meters per pixel (map covers full diameter of radar)
+        target_mpp = (max_range * 2 * 1000) / width_px
+
+        # OSM base formula
+        cos_lat = math.cos(math.radians(lat))
+        if cos_lat < 0.01:
+            cos_lat = 0.01  # avoid poles
+
+        zoom = math.log2((156543.03392 * cos_lat) / target_mpp)
+
+        # Clamp to OSM valid zoom
+        return max(0, min(zoom, 18))

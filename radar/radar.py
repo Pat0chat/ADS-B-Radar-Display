@@ -125,6 +125,7 @@ class ADSBRadarApp:
         self.timeline_minutes = tk.IntVar(value=5)
         self.refresh_time = tk.IntVar(value=1000)
         self.show_osm = tk.BooleanVar(value=False)
+        self.map_opacity = tk.DoubleVar(value=0.9)
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
@@ -200,6 +201,16 @@ class ADSBRadarApp:
             textvariable=self.refresh_time,
             width=10,
             command=lambda: self.source_dump.update_refresh(self.refresh_time.get())
+        ).pack(fill="x")
+
+        # OSM Tiles opacity
+        ttk.Label(self.controls, text="OSM Tiles opacity:").pack(anchor="w", pady=(6, 0))
+        ttk.Spinbox(
+            self.controls,
+            from_=0.1, to=1.0,
+            increment=0.05,
+            textvariable=self.map_opacity,
+            width=10
         ).pack(fill="x")
 
         ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w", pady=(6, 0))
@@ -458,39 +469,88 @@ class ADSBRadarApp:
 
     # ------------------- Radar rendering -------------------
     def draw_osm_background(self):
-        """Download and draw an OSM tile grid as the radar background."""
+        """
+        Draw a perfectly centered OSM map using correct WebMercator math.
+        Tiles are aligned using pixel-precise offsets to ensure the map
+        matches the radar center lat/lon and the radar range.
+        """
+
+        # Clear previous map layer
         self.canvas.delete("osmbg")
 
-        zoom = 12   # fixed zoom; later we can make this user-adjustable
+        cw = self.canvas_width
+        ch = self.canvas_height
         lat = self.center_lat.get()
         lon = self.center_lon.get()
 
-        cw, ch = self.canvas_width, self.canvas_height
+        # -------------------
+        # Compute dynamic zoom
+        # -------------------
+        zoom = int(self.source_osm.compute_osm_zoom(lat, self.max_range.get(), cw))
+        zoom = max(6, min(zoom, 18))   # OSM safe zoom range
 
-        # Determine how many tiles we need to cover the canvas
-        tiles_x = int(cw / 256) + 2
-        tiles_y = int(ch / 256) + 2
+        # -------------------------------
+        # Compute center pixel coordinates
+        # -------------------------------
+        scale = 256 * (2 ** zoom)
 
-        center_xt, center_yt = self.source_osm.latlon_to_tile(lat, lon, zoom)
+        # Global pixel X
+        px_center = (lon + 180.0) / 360.0 * scale
 
-        # start tile indices
-        start_x = center_xt - tiles_x // 2
-        start_y = center_yt - tiles_y // 2
+        # Global pixel Y
+        lat_rad = math.radians(lat)
+        n = math.pi - math.log(math.tan(math.pi/4 + lat_rad/2))
+        py_center = (n / math.pi) * (scale / 2)
 
-        stitched = Image.new("RGB", (tiles_x * 256, tiles_y * 256))
+        # ------------------------------------
+        # Compute pixel coordinates for top-left
+        # ------------------------------------
+        px0 = px_center - cw / 2
+        py0 = py_center - ch / 2
 
-        for ix in range(tiles_x):
-            for iy in range(tiles_y):
-                tx = start_x + ix
-                ty = start_y + iy
+        # ----------------------------------------
+        # Which tiles are needed to cover the screen
+        # ----------------------------------------
+        tile_x0 = int(px0 // 256)
+        tile_y0 = int(py0 // 256)
+        tile_x1 = int((px0 + cw) // 256)
+        tile_y1 = int((py0 + ch) // 256)
+
+        # Create target stitched map
+        stitched = Image.new("RGB", (cw, ch))
+
+        # ---------------------
+        # Download all tiles
+        # ---------------------
+        for tx in range(tile_x0, tile_x1 + 1):
+            for ty in range(tile_y0, tile_y1 + 1):
 
                 tile = self.source_osm.fetch_osm_tile(zoom, tx, ty)
-                if tile:
-                    stitched.paste(tile, (ix * 256, iy * 256))
+                if tile is None:
+                    continue
 
-        # resize to canvas
-        stitched = stitched.resize((cw, ch), Image.Resampling.LANCZOS)
+                # Compute paste position relative to final image
+                paste_x = int(tx * 256 - px0)
+                paste_y = int(ty * 256 - py0)
+
+                stitched.paste(tile, (paste_x, paste_y))
+
+        # -----------------------------------
+        # Apply opacity for better readability
+        # -----------------------------------
+        opacity = self.map_opacity.get() if hasattr(self, "map_opacity") else 1.0
+
+        stitched = stitched.convert("RGBA")
+        alpha = int(255 * opacity)
+
+        r, g, b, a = stitched.split()
+        a = a.point(lambda p: alpha)
+        stitched = Image.merge("RGBA", (r, g, b, a))
+
+        # Store Tk image reference
         self.osm_tk = ImageTk.PhotoImage(stitched)
+
+        # Draw on canvas
         self.canvas.create_image(0, 0, anchor="nw", image=self.osm_tk, tags="osmbg")
 
     def draw_background(self):
