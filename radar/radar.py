@@ -4,7 +4,7 @@ import time
 import math
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageEnhance
 
 from datasource import Dump1090Source, OSMSource
 from aircraft import Aircrafts
@@ -125,7 +125,6 @@ class ADSBRadarApp:
         self.timeline_minutes = tk.IntVar(value=5)
         self.refresh_time = tk.IntVar(value=1000)
         self.show_osm = tk.BooleanVar(value=False)
-        self.map_opacity = tk.DoubleVar(value=0.9)
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
@@ -201,16 +200,6 @@ class ADSBRadarApp:
             textvariable=self.refresh_time,
             width=10,
             command=lambda: self.source_dump.update_refresh(self.refresh_time.get())
-        ).pack(fill="x")
-
-        # OSM Tiles opacity
-        ttk.Label(self.controls, text="OSM Tiles opacity:").pack(anchor="w", pady=(6, 0))
-        ttk.Spinbox(
-            self.controls,
-            from_=0.1, to=1.0,
-            increment=0.05,
-            textvariable=self.map_opacity,
-            width=10
         ).pack(fill="x")
 
         ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w", pady=(6, 0))
@@ -483,15 +472,11 @@ class ADSBRadarApp:
         lat = self.center_lat.get()
         lon = self.center_lon.get()
 
-        # -------------------
         # Compute dynamic zoom
-        # -------------------
         zoom = int(self.source_osm.compute_osm_zoom(lat, self.max_range.get(), cw))
         zoom = max(6, min(zoom, 18))   # OSM safe zoom range
 
-        # -------------------------------
         # Compute center pixel coordinates
-        # -------------------------------
         scale = 256 * (2 ** zoom)
 
         # Global pixel X
@@ -502,15 +487,11 @@ class ADSBRadarApp:
         n = math.pi - math.log(math.tan(math.pi/4 + lat_rad/2))
         py_center = (n / math.pi) * (scale / 2)
 
-        # ------------------------------------
         # Compute pixel coordinates for top-left
-        # ------------------------------------
         px0 = px_center - cw / 2
         py0 = py_center - ch / 2
 
-        # ----------------------------------------
         # Which tiles are needed to cover the screen
-        # ----------------------------------------
         tile_x0 = int(px0 // 256)
         tile_y0 = int(py0 // 256)
         tile_x1 = int((px0 + cw) // 256)
@@ -519,9 +500,7 @@ class ADSBRadarApp:
         # Create target stitched map
         stitched = Image.new("RGB", (cw, ch))
 
-        # ---------------------
         # Download all tiles
-        # ---------------------
         for tx in range(tile_x0, tile_x1 + 1):
             for ty in range(tile_y0, tile_y1 + 1):
 
@@ -535,17 +514,8 @@ class ADSBRadarApp:
 
                 stitched.paste(tile, (paste_x, paste_y))
 
-        # -----------------------------------
-        # Apply opacity for better readability
-        # -----------------------------------
-        opacity = self.map_opacity.get() if hasattr(self, "map_opacity") else 1.0
-
-        stitched = stitched.convert("RGBA")
-        alpha = int(255 * opacity)
-
-        r, g, b, a = stitched.split()
-        a = a.point(lambda p: alpha)
-        stitched = Image.merge("RGBA", (r, g, b, a))
+        stitched = ImageEnhance.Color(stitched).enhance(0.3)
+        stitched = ImageEnhance.Brightness(stitched).enhance(0.8)
 
         # Store Tk image reference
         self.osm_tk = ImageTk.PhotoImage(stitched)
@@ -559,9 +529,20 @@ class ADSBRadarApp:
         self.canvas.delete("osmbg")
         self.canvas.delete("hud_btn")
 
+        ring_color = "#2b6d6b"
+        label_color = "#9be3dc"
+        minor_tick = "#1a9494"
+        major_tick = "#3dd6c6"
+        cardinal_color = "#9be3dc"
+
         # Draw OSM map if enabled
         if self.show_osm.get():
             self.draw_osm_background()
+            ring_color = "#ffffff"
+            label_color = "#ffffff"
+            minor_tick = "#cccccc"
+            major_tick = "#ffffff"
+            cardinal_color = "#ffffff"
 
         cx = self.canvas_width // 2
         cy = self.canvas_height // 2
@@ -574,7 +555,7 @@ class ADSBRadarApp:
             r = radius_px * (i / 4)
             self.canvas.create_oval(
                 cx - r, cy - r, cx + r, cy + r,
-                outline="#2b6d6b", dash=(3, 6),
+                outline=ring_color, dash=(3, 6),
                 tags=("bg",)
             )
 
@@ -584,7 +565,7 @@ class ADSBRadarApp:
                 cy - r + 10,
                 anchor="nw",
                 text=f"{km} km",
-                fill="#9be3dc",
+                fill=label_color,
                 font=(None, 8),
                 tags=("bg",)
             )
@@ -592,7 +573,7 @@ class ADSBRadarApp:
         # Center marker
         self.canvas.create_oval(
             cx - 4, cy - 4, cx + 4, cy + 4,
-            outline="#00ffaa",
+            outline=ring_color,
             width=2,
             tags=("bg",)
         )
@@ -617,7 +598,7 @@ class ADSBRadarApp:
             y1 = cy - r1 * cos_a
 
             self.canvas.create_line(x0, y0, x1, y1,
-                                    fill="#3dd6c6" if deg % 30 == 0 else "#1a9494",
+                                    fill=major_tick if deg % 30 == 0 else minor_tick,
                                     width=2 if deg % 30 == 0 else 1, tags=("bg",),
                                     smooth=True, splinesteps=24
                                     )
@@ -631,7 +612,7 @@ class ADSBRadarApp:
                 self.canvas.create_text(
                     lx, ly,
                     text=letter,
-                    fill="#9be3dc",
+                    fill=cardinal_color,
                     font=(None, 14, "bold"),
                     tags=("bg",)
                 )
