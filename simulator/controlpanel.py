@@ -3,8 +3,13 @@
 import tkinter as tk
 from tkinter import ttk
 
-
+# ------------------- ControlPanel -------------------
 class ControlPanel(tk.Tk):
+    """ControlPanel class for the Dump1090 Simulator.
+
+    This class handles UI and interactions with UI.
+    """
+
     def __init__(self, sim, httpd):
         super().__init__()
         self.title("Simulator Control Panel")
@@ -59,19 +64,24 @@ class ControlPanel(tk.Tk):
         self.update_status_loop()
 
     def update_status_loop(self):
+        """Update number of aircrafts status."""
         self.aircraft_status.config(text=str(len(self.sim.aircraft)))
-        self.after(500, self.update_status_loop)
+        self.after(1000, self.update_status_loop)
 
     def update_aircraft_count(self):
+        """Update simulation number of aircrafts."""
         self.sim.num_aircraft = self.aircraft_var.get()
 
     def update_interval(self):
+        """Update simulation refresh interval."""
         self.sim.update_interval = self.update_var.get()
 
     def update_radius(self):
+        """Update simulation maximum radius."""
         self.sim.radius_km = self.radius_var.get()
 
     def toggle_pause(self):
+        """Play or pause the simulation."""
         self.sim.running = not self.sim.running
         self.pause_btn.config(
             text="Resume Simulation" if not self.sim.running else "Pause Simulation"

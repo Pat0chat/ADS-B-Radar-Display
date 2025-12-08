@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-dump1090 simulator with Tkinter control panel
+Dump1090 Simulator
+Simulates planes and send dump1090 messages through an API.
 
 Features:
    - Serves a JSON array at http://localhost:8080/data.json
@@ -20,12 +21,7 @@ from controlpanel import ControlPanel
 from server import start_http_server
 from simulator import Simulator
 
-
-# ---------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------
-
-
+# ------------------- Configuration -------------------
 CONFIG_FILE = "./simulator/config.json"
 HOST = "0.0.0.0"
 PORT = 8080
@@ -40,12 +36,12 @@ CENTER_LON = 13.0
 _LOCK = threading.Lock()
 
 
-# ---------------------------------------------------------
-# UTILITY FUNCTIONS
-# ---------------------------------------------------------
-
-
+# ------------------- Utilities -------------------
 def load_config():
+    """Load JSON config if available.
+
+    Returns a dict (possibly empty) with configuration overrides.
+    """
     print(os.path.exists(CONFIG_FILE))
     if os.path.exists(CONFIG_FILE):
         print("[ADS-B Simulator] Reading config file")
@@ -61,11 +57,7 @@ def load_config():
     return {}
 
 
-# ---------------------------------------------------------
-# MAIN ENTRY POINT
-# ---------------------------------------------------------
-
-
+# ------------------- Main -------------------
 if __name__ == "__main__":
     print("[ADS-B Simulator] Launching ADS-B Simulator")
 
@@ -92,10 +84,8 @@ if __name__ == "__main__":
         print("[ADS-B Simulator] **** Setup ****")
         print("[ADS-B Simulator] Host: " + HOST)
         print("[ADS-B Simulator] Port: " + str(PORT))
-        print("[ADS-B Simulator] Number of aircraft: " +
-              str(DEFAULT_NUM_AIRCRAFT))
-        print("[ADS-B Simulator] Update interval: " +
-              str(DEFAULT_UPDATE_INTERVAL))
+        print("[ADS-B Simulator] Number of aircraft: " + str(DEFAULT_NUM_AIRCRAFT))
+        print("[ADS-B Simulator] Update interval: " + str(DEFAULT_UPDATE_INTERVAL))
         print("[ADS-B Simulator] Radius (km): " + str(DEFAULT_RADIUS_KM))
         print("[ADS-B Simulator] Center lat: " + str(CENTER_LAT))
         print("[ADS-B Simulator] Center lon: " + str(CENTER_LON))
@@ -104,8 +94,7 @@ if __name__ == "__main__":
         sim = Simulator(DEFAULT_NUM_AIRCRAFT, DEFAULT_RADIUS_KM,
                         DEFAULT_UPDATE_INTERVAL, CENTER_LAT, CENTER_LON, _LOCK)
         httpd = start_http_server(sim, HOST, PORT)
-        print(
-            f"[ADS-B Simulator] Simulator running at http://{HOST}:{PORT}/data.json")
+        print(f"[ADS-B Simulator] Simulator running at http://{HOST}:{PORT}/data.json")
 
         ui = ControlPanel(sim, httpd)
         ui.mainloop()

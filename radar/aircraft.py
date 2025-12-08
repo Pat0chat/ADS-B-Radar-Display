@@ -5,7 +5,7 @@ import time
 
 # ------------------- Aircrafts -------------------
 class Aircrafts:
-    """Represents collection of aircrafts"""
+    """Represent collection of aircrafts"""
 
     def __init__(self):
         self.aircrafts = {}
@@ -75,7 +75,7 @@ class Aircrafts:
 
 # ------------------- Aircraft -------------------
 class Aircraft:
-    """Represents one aircraft and its history/trail"""
+    """Represent one aircraft and its history/trail"""
 
     def __init__(self, hexid, raw, max_trails):
         self.hex = hexid

@@ -5,20 +5,13 @@ import math
 import string
 import time
 
-# ---------------------------------------------------------
-# GLOBAL VARIABLES
-# ---------------------------------------------------------
-
-
+# ------------------- Variables -------------------
 EARTH_R = 6371.0
 
 
-# ---------------------------------------------------------
-# UTILITY FUNCTIONS
-# ---------------------------------------------------------
-
-
+# ------------------- Utilities -------------------
 def destination_point(lat_deg, lon_deg, bearing_deg, distance_km):
+    """Generate destination point."""
     lat = math.radians(lat_deg)
     lon = math.radians(lon_deg)
     brng = math.radians(bearing_deg)
@@ -32,12 +25,12 @@ def destination_point(lat_deg, lon_deg, bearing_deg, distance_km):
     )
     return math.degrees(lat2), math.degrees(lon2)
 
-
 def km_from_knots(kts):
+    """Convert kts to km/s."""
     return kts * 1.852 / 3600.0
 
-
 def gen_category():
+    """Generate category."""
     return random.choice([
         "A",   # fixed-wing
         "B",   # rotorcraft
@@ -45,25 +38,23 @@ def gen_category():
         "D"   # UAV / special
     ])
 
-
 def gen_hex():
+    """Generate hexid."""
     return "".join(random.choice("0123456789abcdef") for _ in range(6))
 
-
 def gen_callsign():
+    """Generate callsign."""
     return random.choice(["DLH", "KLM", "AFR", "EZY", "RYR", "UAE", "AAL", "SAS"]) + str(random.randint(1, 9999))
 
-
 def gen_reg():
+    """Generate registration."""
     return "".join(random.choice(string.ascii_uppercase) for _ in range(5))
 
 
-# ---------------------------------------------------------
-# AIRCRAFT MODEL
-# ---------------------------------------------------------
-
-
+# ------------------- Aircraft -------------------
 class Aircraft:
+    """Represent one aircraft in the simulation."""
+
     def __init__(self, center_lat, center_lon, radius_km):
         angle = random.random() * 360.0
         r = random.random() * radius_km
@@ -84,6 +75,8 @@ class Aircraft:
         self._last_behavior = time.time()
 
     def step(self, dt):
+        """Update aircraft parameters (simulation step)."""
+
         km_s = km_from_knots(self.speed)
         dist = km_s * dt
         self.lat, self.lon = destination_point(
@@ -104,6 +97,7 @@ class Aircraft:
             self._last_behavior = time.time()
 
     def to_json(self):
+        """Create json message from aircraft parameters"""
         return {
             "hex": self.hex,
             "flight": self.flight,

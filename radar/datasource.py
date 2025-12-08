@@ -83,14 +83,6 @@ class OSMSource:
     def __init__(self):
         pass
 
-    def latlon_to_tile(self, lat, lon, zoom):
-        """Convert lat/lon to OSM tile numbers."""
-        lat_r = math.radians(lat)
-        n = 2.0 ** zoom
-        xtile = int((lon + 180.0) / 360.0 * n)
-        ytile = int((1.0 - math.log(math.tan(lat_r) + 1 / math.cos(lat_r)) / math.pi) / 2.0 * n)
-        return xtile, ytile
-
     def fetch_osm_tile(self, z, x, y):
         """Download a single OSM tile. Return PIL image or None."""
         try:

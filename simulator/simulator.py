@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-
+ 
 import random
 import threading
 import time
-import math
 
 from aircraft import Aircraft
 
+# ------------------- Simulator -------------------
 class Simulator:
+    """Simulator class for the Dump1090 Simulator.
+
+    This class handles the main loop of the simulation (create, update, remove planes) and the generation of all plane's messages.
+    """
+
     def __init__(self, DEFAULT_NUM_AIRCRAFT, DEFAULT_RADIUS_KM, DEFAULT_UPDATE_INTERVAL, CENTER_LAT, CENTER_LON, _LOCK):
         self.num_aircraft = DEFAULT_NUM_AIRCRAFT
         self.radius_km = DEFAULT_RADIUS_KM
@@ -27,6 +32,7 @@ class Simulator:
         self.sim_thread.start()
 
     def run_loop(self):
+        """Main simulation loop."""
         last = time.time()
         last_change = last
         while True:
@@ -57,5 +63,6 @@ class Simulator:
             time.sleep(self.update_interval)
 
     def snapshot(self):
+        """Return snapshot of data at a given time for all planes."""
         with self.lock:
             return [ac.to_json() for ac in self.aircraft]
