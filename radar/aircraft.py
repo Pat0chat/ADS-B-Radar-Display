@@ -39,7 +39,7 @@ class Aircrafts:
             width=1,
             tags=("aircraft",),
             smooth=True,
-            splinesteps=8
+            splinesteps=16
         )
 
         # Label
