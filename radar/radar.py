@@ -339,7 +339,6 @@ class ADSBRadarApp:
         if not self.running:
             return
         self.update_frame()
-        self.source_dump.update_refresh(self.refresh_time.get())
         self.root.after(self.refresh_time.get(), self.schedule_update)
 
     def show_raw_table(self):
@@ -426,6 +425,7 @@ class ADSBRadarApp:
         """Erase all stored trails and canvas trail objects."""
         self.aircraft_items.clear_trails()
         self.canvas.delete('trails')
+        self.aircraft_items.aircraft_trails = {}
 
     def km_to_pixels(self, km):
         """Convert distance in kilometers to canvas pixels given max range."""
@@ -522,7 +522,7 @@ class ADSBRadarApp:
 
         # Draw on canvas
         self.canvas.create_image(0, 0, anchor="nw", image=self.osm_tk, tags="osmbg")
-
+    
     def draw_background(self):
         """Draw either radar background or OSM map + rings overlay."""
         self.canvas.delete("bg")
@@ -639,93 +639,88 @@ class ADSBRadarApp:
         if self.paused.get():
             return
 
-        # Clear view
-        self.canvas.delete("aircraft")
-        self.canvas.delete("trails")
-
         # Get data and update aircrafts
         data = self.source_dump.snapshot()
         self.aircraft_items.update_aircrafts(data, self.trail_length.get())
-        self.aircraft_items.clean_data()
+        self.aircraft_items.clean_data(self.canvas, self.max_range.get())
 
         # Process aircrafts
         aircrafts = self.aircraft_items.get_aircrafts()
-        for hexid in aircrafts:
-            aircraft = aircrafts[hexid]
+
+
+
+        for hexid, aircraft in aircrafts.items():
+
+            # Compute new position
             x, y, dkm, brg = self.geo_to_canvas(aircraft.lat, aircraft.lon)
-
             aircraft.update_compute_data(brg, dkm)
-            aircraft.update_trail(x, y)
 
-            # Draw trail
-            trail = aircraft.trail
-            n = len(trail)
-            if n > 1 and self.trail_length.get() > 0:
-                for idx in range(1, n):
-                    ax, ay, alt1 = trail[idx-1]
-                    bx, by, alt2 = trail[idx]
-                    seg_age = idx/max(1, n)
-                    width = max(1, int(3*(1-seg_age)))
+            # Skip off-range aircraft (small win)
+            if dkm > self.max_range.get():
+                continue
 
-                    # Interpolate color between start and end of segment
-                    col1 = altitude_to_color(alt1)
-                    col2 = altitude_to_color(alt2)
-                    r = int(int(col1[1:3], 16)*(1-seg_age) +
-                            int(col2[1:3], 16)*seg_age)
-                    g = int(int(col1[3:5], 16)*(1-seg_age) +
-                            int(col2[3:5], 16)*seg_age)
-                    b = int(int(col1[5:7], 16)*(1-seg_age) +
-                            int(col2[5:7], 16)*seg_age)
-                    fade_color = f"#{r:02x}{g:02x}{b:02x}"
-                    self.canvas.create_line(ax, ay, bx, by, fill=fade_color,
-                                            width=width, smooth=True, splinesteps=24, tags=("trails",))
+            # Create canvas items once
+            if hexid not in self.aircraft_items.aircraft_canvas_items:
+                self.aircraft_items.create_canvas_item(self.canvas, hexid, x, y)
 
-            # Draw aircraft point
-            color_inner = "#ffffff"
-            color_outer = "#ffffff"
-            if aircraft.category.startswith("A"):     # Fixed-wing
-                color_outer = "#ffc400"
-            elif aircraft.category.startswith("B"):   # Rotorcraft
-                color_outer = "#e5ff00"
-            else:                                     # Unknown
-                color_outer = "#d3d3d3"    
-            canvas_id = self.canvas.create_oval(
-                x - 4, y - 4, x + 4, y + 4,
-                outline=color_outer,
-                width=2,
-                tags=("aircraft",)
-            )
-            self.canvas.create_oval(
-                x - 1, y - 1, x + 1, y + 1,
-                fill=color_inner,
-                outline="",
-                tags=("aircraft",)
-            )
+            items = self.aircraft_items.aircraft_canvas_items[hexid]
 
-            self.aircraft_items.set_canvas_id(hexid, canvas_id)
+            # Update aircraft graphics
+            # Colors
+            if aircraft.category.startswith("A"):
+                outer_c = "#ffc400"
+            elif aircraft.category.startswith("B"):
+                outer_c = "#e5ff00"
+            else:
+                outer_c = "#d3d3d3"
 
-            # Heading / speed vector
-            base_len = 10
-            spd = (aircraft.speed or 0)
-            
-            vector_len = base_len + spd * 0.07 # Speed extends line slightly
-            vect_speed_color = speed_to_color(spd)
+            self.canvas.itemconfig(items["outer"], outline=outer_c)
 
-            angle_rad = math.radians(aircraft.track)
+            # Move point
+            self.canvas.coords(items["outer"], x-4, y-4, x+4, y+4)
+            self.canvas.coords(items["inner"], x-1, y-1, x+1, y+1)
 
-            x2 = x + vector_len * math.sin(angle_rad)
-            y2 = y - vector_len * math.cos(angle_rad)
+            # Speed vector
+            spd = aircraft.speed or 0
+            vector_len = 10 + spd * 0.07
+            a = math.radians(aircraft.track)
+            x2 = x + vector_len * math.sin(a)
+            y2 = y - vector_len * math.cos(a)
+            self.canvas.coords(items["vector"], x, y, x2, y2)
+            self.canvas.itemconfig(items["vector"], fill=speed_to_color(spd))
 
-            self.canvas.create_line(x, y, x2, y2, fill=vect_speed_color, width=1,
-                                    arrow=tk.LAST, arrowshape=(8, 10, 4), tags=("aircraft",),
-                                    smooth=True, splinesteps=24)
-
-            # Attach label (as separate canvas items but tagged 'aircraft' too)
+            # Label
             if self.show_labels.get():
-                label = aircraft.callsign or aircraft.registration or aircraft.hex
-                lab_txt = f"{label}\n{int(dkm)} km {aircraft.altitude or '?'} ft"
-                self.canvas.create_text(
-                    x + 10, y + 10, text=lab_txt, anchor="nw", fill="#e6ffff", font=(None, 8), tags=("aircraft",))
+                lab = aircraft.callsign or aircraft.registration or aircraft.hex
+                self.canvas.itemconfig(items["label"],
+                    text=f"{lab}\n{int(dkm)} km {aircraft.altitude or '?'} ft\n{aircraft.lat}°  {aircraft.lon}°")
+                self.canvas.coords(items["label"], x+10, y+10)
+            else:
+                self.canvas.itemconfig(items["label"], text="")
+
+            # Trails optimized (append only)
+            aircraft.update_trail(x, y)
+            trail = aircraft.trail
+
+            if len(trail) >= 2:
+                # Create polyline once
+                if hexid not in self.aircraft_items.aircraft_trails:
+                    xs = [p[0] for p in trail]
+                    ys = [p[1] for p in trail]
+                    coords = [v for pair in zip(xs, ys) for v in pair]
+
+                    self.aircraft_items.aircraft_trails[hexid] = self.canvas.create_line(
+                        *coords,
+                        fill=altitude_to_color(aircraft.altitude),
+                        width=2,
+                        tags=("trails",)
+                    )
+                else:
+                    # Append only new point
+                    lastx, lasty, _ = trail[-1]
+                    self.canvas.coords(self.aircraft_items.aircraft_trails[hexid],
+                                       *self.canvas.coords(self.aircraft_items.aircraft_trails[hexid]),
+                                       lastx, lasty)
 
         # Update timeline count
         aircrafts_count = self.source_dump.aircrafts_count()

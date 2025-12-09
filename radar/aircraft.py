@@ -10,6 +10,47 @@ class Aircrafts:
     def __init__(self):
         self.aircrafts = {}
         self.canvas_ids = {}
+        self.aircraft_canvas_items = {}
+        self.aircraft_trails = {} 
+    
+    def create_canvas_item(self, canvas, hexid, x, y):
+        items = {}
+
+        # Outer dot
+        items["outer"] = canvas.create_oval(
+            x-4, y-4, x+4, y+4,
+            outline="#ffc400",
+            width=2,
+            tags=("aircraft",)
+        )
+
+        # Inner dot
+        items["inner"] = canvas.create_oval(
+            x-1, y-1, x+1, y+1,
+            fill="#ffffff",
+            outline="",
+            tags=("aircraft",)
+        )
+
+        # Speed vector
+        items["vector"] = canvas.create_line(
+            x, y, x, y,
+            fill="#00ffff",
+            width=1,
+            tags=("aircraft",)
+        )
+
+        # Label
+        items["label"] = canvas.create_text(
+            x+10, y+10,
+            text="",
+            anchor="nw",
+            fill="#e6ffff",
+            font=(None, 8),
+            tags=("aircraft",)
+        )
+
+        self.aircraft_canvas_items[hexid] = items
 
     def update_aircrafts(self, data, max_trails):
         """Update planes from received data."""
@@ -25,11 +66,18 @@ class Aircrafts:
                 aircraft = Aircraft(hexid, ac, max_trails)
                 self.aircrafts[hexid] = aircraft
     
-    def clean_data(self):
+    def clean_data(self, canvas, max_range):
         """Remove aircraft too old, invalid, or stale."""
+        current_hex = list(self.aircrafts.keys())
+        existing_hex = list(self.aircraft_canvas_items.keys())
+
         to_delete = []
 
-        for hexid in list(self.aircrafts.keys()):
+        for hexid in existing_hex:
+            if hexid not in current_hex:
+                to_delete.append(hexid)
+
+        for hexid in current_hex:
             ac = self.aircrafts[hexid]
 
             # Remove aircraft missing coordinates
@@ -42,6 +90,11 @@ class Aircrafts:
                 to_delete.append(hexid)
                 continue
 
+            # Remove airplane outside radar range
+            if ac.distance_km > max_range:
+                to_delete.append(hexid)
+                continue
+
             # Remove stale / not seen for a long time
             if isinstance(ac.last_seen, (int, float)):
                 if ac.last_seen > 60:
@@ -49,7 +102,22 @@ class Aircrafts:
                     continue
 
         for hexid in to_delete:
+            # Delete aircraft canvas items
+            items = self.aircraft_canvas_items.pop(hexid, None)
+            if items:
+                for item in items.values():
+                    try:
+                        canvas.delete(item)
+                    except:
+                        pass
+
+            # Delete trail polyline if exists
+            trail_id = self.aircraft_trails.pop(hexid, None)
+            if trail_id is not None:
+                canvas.delete(trail_id)
+
             del self.aircrafts[hexid]
+
     
     def get_aircrafts(self):
         """Get all aircrafts."""
