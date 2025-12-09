@@ -127,8 +127,7 @@ class ADSBRadarApp:
         self.show_osm = tk.BooleanVar(value=False)
 
         # --- Main radar canvas ---
-        self.canvas = tk.Canvas(root, width=CANVAS_SIZE,
-                                height=CANVAS_SIZE, bg="#02121a")
+        self.canvas = tk.Canvas(root, width=CANVAS_SIZE, height=CANVAS_SIZE, bg="#0C1016")
         self.canvas.bind("<Configure>", self.on_canvas_resize)
         self.canvas.bind("<Button-1>", self.on_canvas_click)
 
@@ -214,8 +213,7 @@ class ADSBRadarApp:
         ttk.Label(self.controls, text="Altitude Legend:").pack(
             anchor="w", pady=(6, 0))
 
-        alt_legend = tk.Canvas(self.controls, width=140, height=30,
-                               bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+        alt_legend = tk.Canvas(self.controls, width=140, height=30, bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         alt_legend.pack(pady=(2, 6))
 
         # Draw horizontal gradient (0 ft → 40,000 ft)
@@ -224,13 +222,11 @@ class ADSBRadarApp:
             c = altitude_to_color(alt)
             alt_legend.create_line(x, 0, x, 30, fill=c)
 
-        alt_legend.create_text(5, 15, anchor="w", text="0 ft", font=(None, 8))
-        alt_legend.create_text(135, 15, anchor="e",
-                               text="40,000 ft", font=(None, 8))
+        alt_legend.create_text(5, 15, anchor="w", text="0 ft", font=("Consolas", 8))
+        alt_legend.create_text(135, 15, anchor="e", text="40,000 ft", font=("Consolas", 8))
 
         ttk.Label(self.controls, text="Speed Legend:").pack(anchor="w", pady=(6, 0))
-        spd_legend = tk.Canvas(self.controls, width=140, height=30,
-                               bg="#ffffff", highlightthickness=1, highlightbackground="#000")
+        spd_legend = tk.Canvas(self.controls, width=140, height=30, bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         spd_legend.pack(pady=(2, 6))
 
         # Draw horizontal gradient (0 kt → 600 kt)
@@ -239,26 +235,21 @@ class ADSBRadarApp:
             c = speed_to_color(spd)
             spd_legend.create_line(x, 0, x, 30, fill=c)
 
-        spd_legend.create_text(5, 15, anchor="w", text="0 kt", font=(None, 8))
-        spd_legend.create_text(135, 15, anchor="e",
-                               text="600 kt", font=(None, 8))
+        spd_legend.create_text(5, 15, anchor="w", text="0 kt", font=("Consolas", 8))
+        spd_legend.create_text(135, 15, anchor="e", text="600 kt", font=("Consolas", 8))
 
-        ttk.Label(self.controls, text="Dump1090 Status:").pack(
-            anchor="w", pady=(6, 0))
-        self.status_label = ttk.Label(
-            self.controls, text="Unknown", foreground="orange")
+        ttk.Label(self.controls, text="Dump1090 Status:").pack(anchor="w", pady=(6, 0))
+        self.status_label = ttk.Label(self.controls, text="Unknown", foreground="orange")
         self.status_label.pack(anchor="w")
         self.dump1090_alive = False
 
         ttk.Label(self.controls, text="Last update:").pack(anchor="w", pady=(6, 0))
-        self.status_freshness = ttk.Label(
-            self.controls, text="N/A", foreground="orange")
+        self.status_freshness = ttk.Label(self.controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
 
         # ---- Timeline ----
         self.timeline_height = 40
-        self.timeline_canvas = tk.Canvas(root, height=self.timeline_height,
-                                         bg="#11181c", highlightthickness=0)
+        self.timeline_canvas = tk.Canvas(root, height=self.timeline_height, bg="#0C1016", highlightthickness=0)
         self.timeline_canvas.grid(row=1, column=0, columnspan=2, sticky="ew")
 
         self.count_history = []     # [(timestamp, count), ...]
@@ -272,6 +263,7 @@ class ADSBRadarApp:
         # --- Data source ---
         self.source_dump = Dump1090Source(DATA_URL, self.refresh_time.get())
         self.source_dump.start()
+        self.prev_update = self.source_dump.last_seen_time
 
         self.source_osm = OSMSource()
 
@@ -566,7 +558,7 @@ class ADSBRadarApp:
                 anchor="nw",
                 text=f"{km} km",
                 fill=label_color,
-                font=(None, 8),
+                font=("Consolas", 8),
                 tags=("bg",)
             )
 
@@ -613,7 +605,7 @@ class ADSBRadarApp:
                     lx, ly,
                     text=letter,
                     fill=cardinal_color,
-                    font=(None, 14, "bold"),
+                    font=("Consolas", 14, "bold"),
                     tags=("bg",)
                 )
         
@@ -630,14 +622,18 @@ class ADSBRadarApp:
 
         # Last updated
         if self.source_dump.alive:
-            self.status_freshness.configure(
-                text=self.source_dump.last_seen(), foreground="green")
+            self.status_freshness.configure(text=self.source_dump.last_seen(), foreground="green")
         else:
             self.status_freshness.configure(text="No data", foreground="red")
 
         # Pause
         if self.paused.get():
             return
+        
+        # Data change ?
+        if self.source_dump.last_seen_time == self.prev_update:
+            return   
+        self.prev_update = self.source_dump.last_seen_time
 
         # Get data and update aircrafts
         data = self.source_dump.snapshot()
@@ -646,8 +642,6 @@ class ADSBRadarApp:
 
         # Process aircrafts
         aircrafts = self.aircraft_items.get_aircrafts()
-
-
 
         for hexid, aircraft in aircrafts.items():
 
@@ -692,8 +686,13 @@ class ADSBRadarApp:
             # Label
             if self.show_labels.get():
                 lab = aircraft.callsign or aircraft.registration or aircraft.hex
+                vert = "↑"
+                if aircraft.vert_rate < 0:
+                    vert = "↓"
+                elif aircraft.vert_rate == 0:
+                    vert = "→"
                 self.canvas.itemconfig(items["label"],
-                    text=f"{lab}\n{int(dkm)} km {aircraft.altitude or '?'} ft\n{aircraft.lat}°  {aircraft.lon}°")
+                                       text=f"{lab}\n{int(dkm)} km {aircraft.altitude or '?'} ft {vert} \n{aircraft.lat}° {aircraft.lon}°")
                 self.canvas.coords(items["label"], x+10, y+10)
             else:
                 self.canvas.itemconfig(items["label"], text="")
@@ -713,7 +712,9 @@ class ADSBRadarApp:
                         *coords,
                         fill=altitude_to_color(aircraft.altitude),
                         width=2,
-                        tags=("trails",)
+                        tags=("trails",),
+                        smooth=True, 
+                        splinesteps=8
                     )
                 else:
                     # Append only new point
@@ -805,7 +806,7 @@ class ADSBRadarApp:
                 text=label,
                 anchor="se",
                 fill="#888",
-                font=("Arial", 8)
+                font=("Consolas", 8)
             )
 
         # Draw sparkline
@@ -828,7 +829,7 @@ class ADSBRadarApp:
         c.create_text(5, 5, anchor="nw",
                       text=f"{now_count} aircrafts",
                       fill="#4ebbc9",
-                      font=("Arial", 9, "bold"))
+                      font=("Consolas", 8, "bold"))
 
     # ------------------- Aircraft click and popup -------------------
     def on_canvas_click(self, event):

@@ -37,7 +37,9 @@ class Aircrafts:
             x, y, x, y,
             fill="#00ffff",
             width=1,
-            tags=("aircraft",)
+            tags=("aircraft",),
+            smooth=True,
+            splinesteps=8
         )
 
         # Label
@@ -46,7 +48,7 @@ class Aircrafts:
             text="",
             anchor="nw",
             fill="#e6ffff",
-            font=(None, 8),
+            font=("Consolas", 8),
             tags=("aircraft",)
         )
 
