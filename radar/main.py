@@ -6,9 +6,10 @@ Fetches data from dump1090 and renders a radar-style view.
 Dependencies:
     - requests
     - pillow (PIL)
+    - pyproj
 
 Run:
-    pip install requests pillow
+    pip install requests pillow pyproj
     python main.py
 """
 

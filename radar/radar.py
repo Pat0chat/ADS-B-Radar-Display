@@ -8,30 +8,9 @@ from PIL import Image, ImageTk, ImageEnhance
 
 from datasource import Dump1090Source, OSMSource
 from aircraft import Aircrafts
+from utils import Utils
 
 # ------------------- Utilities -------------------
-def haversine_km(lat1, lon1, lat2, lon2):
-    """Return haversine distance in kilometers between two lat/lon points."""
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) *
-         math.cos(math.radians(lat2)) * math.sin(dlon/2)**2)
-    return 2 * R * math.asin(math.sqrt(a))
-
-
-def bearing_deg(lat1, lon1, lat2, lon2):
-    """Return bearing in degrees from (lat1,lon1) -> (lat2,lon2)."""
-    dlon = math.radians(lon2 - lon1)
-    lat1r = math.radians(lat1)
-    lat2r = math.radians(lat2)
-    x = math.sin(dlon) * math.cos(lat2r)
-    y = math.cos(lat1r) * math.sin(lat2r) - math.sin(lat1r) * \
-        math.cos(lat2r) * math.cos(dlon)
-    brng = math.degrees(math.atan2(x, y))
-    return (brng + 360.0) % 360.0
-
-
 def altitude_to_color(alt):
     """Map altitude (feet) to RGB hex color string.
 
@@ -243,6 +222,7 @@ class ADSBRadarApp:
         self.show_labels = tk.BooleanVar(value=True)
         self.refresh_time = tk.IntVar(value=1000)
         self.show_osm = tk.BooleanVar(value=False)
+        self.show_prediction = tk.BooleanVar(value=False)
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE, height=CANVAS_SIZE, bg="#0C1016")
@@ -311,11 +291,14 @@ class ADSBRadarApp:
         ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w", pady=(6, 0))
         ttk.Checkbutton(self.controls, text="Pause updates", variable=self.paused).pack(anchor="w", pady=(6, 0))
         ttk.Checkbutton(self.controls, text="Show OSM background", variable=self.show_osm, command=self.refresh_now).pack(anchor="w", pady=(6, 0))
+        ttk.Checkbutton(self.controls, text="Predicted paths", variable=self.show_prediction).pack(anchor="w")
 
         ttk.Button(self.controls, text="Refresh view",
                    command=self.refresh_now).pack(anchor="w", fill="x", pady=(6, 0))
-        ttk.Button(self.controls, text='Clear Trails',
+        ttk.Button(self.controls, text='Clear trails',
                    command=self.clear_trails).pack(anchor="w", fill='x', pady=(6, 0))
+        ttk.Button(self.controls, text='Clear predicted paths',
+                   command=self.clear_predicted_paths).pack(anchor="w", fill='x', pady=(6, 0))
 
         ttk.Label(self.controls, text="Altitude Legend:").pack(
             anchor="w", pady=(6, 0))
@@ -353,6 +336,9 @@ class ADSBRadarApp:
         ttk.Label(self.controls, text="Last update:").pack(anchor="w", pady=(6, 0))
         self.status_freshness = ttk.Label(self.controls, text="N/A", foreground="orange")
         self.status_freshness.pack(anchor="w")
+
+        # ---- Utils functions ----
+        self.utils = Utils()
 
         # ---- Timeline ----
         self.timeline = Timeline(root)
@@ -519,34 +505,10 @@ class ADSBRadarApp:
         self.canvas.delete('trails')
         self.aircraft_items.aircraft_trails = {}
 
-    def km_to_pixels(self, km):
-        """Convert distance in kilometers to canvas pixels given max range."""
-        margin = 10   # space between heading rose and border
-        radius_px = min(self.canvas_width, self.canvas_height) / 2.0 - margin
-        if self.max_range.get() > 0:
-            effective_range = self.max_range.get()
-            px_per_km = radius_px / effective_range
-            return km * px_per_km
-        else:
-            return km * radius_px
-
-    def geo_to_canvas(self, lat, lon):
-        """Transform geographic coordinates to canvas x,y and compute bearing/distance."""
-        dkm = haversine_km(self.center_lat.get(),
-                           self.center_lon.get(), lat, lon)
-        brg = bearing_deg(self.center_lat.get(),
-                          self.center_lon.get(), lat, lon)
-
-        # polar to cartesian: we use angle where 0=North, 90=East
-        angle_rad = math.radians(brg)
-
-        # Convert km to px only using km_to_pixels()
-        dist_px = self.km_to_pixels(dkm)
-
-        x = self.canvas_width/2 + dist_px * math.sin(angle_rad)
-        y = self.canvas_height/2 - dist_px * math.cos(angle_rad)
-
-        return x, y, dkm, brg
+    def clear_predicted_paths(self):
+        """Erase all stored predicted paths and predicted path objects."""
+        self.canvas.delete('prediction_trails')
+        self.aircraft_items.prediction_lines = {}
 
     # ------------------- Radar rendering -------------------
     def draw_osm_background(self):
@@ -565,19 +527,11 @@ class ADSBRadarApp:
         lon = self.center_lon.get()
 
         # Compute dynamic zoom
-        zoom = int(self.source_osm.compute_osm_zoom(lat, self.max_range.get(), cw))
+        zoom = int(self.utils.compute_zoom(lat, self.max_range.get(), cw))
         zoom = max(6, min(zoom, 18))   # OSM safe zoom range
 
         # Compute center pixel coordinates
-        scale = 256 * (2 ** zoom)
-
-        # Global pixel X
-        px_center = (lon + 180.0) / 360.0 * scale
-
-        # Global pixel Y
-        lat_rad = math.radians(lat)
-        n = math.pi - math.log(math.tan(math.pi/4 + lat_rad/2))
-        py_center = (n / math.pi) * (scale / 2)
+        px_center, py_center = self.utils.project(lat, lon, zoom)
 
         # Compute pixel coordinates for top-left
         px0 = px_center - cw / 2
@@ -614,6 +568,7 @@ class ADSBRadarApp:
 
         # Draw on canvas
         self.canvas.create_image(0, 0, anchor="nw", image=self.osm_tk, tags="osmbg")
+        self.canvas.tag_lower("osmbg")
     
     def draw_background(self):
         """Draw either radar background or OSM map + rings overlay."""
@@ -744,9 +699,8 @@ class ADSBRadarApp:
         aircrafts = self.aircraft_items.get_aircrafts()
 
         for hexid, aircraft in aircrafts.items():
-
             # Compute new position
-            x, y, dkm, brg = self.geo_to_canvas(aircraft.lat, aircraft.lon)
+            x, y, dkm, brg = self.utils.geo_to_canvas(self.center_lat.get(), self.center_lon.get(), aircraft.lat, aircraft.lon, self.canvas_width, self.canvas_height, self.max_range.get())
             aircraft.update_compute_data(brg, dkm)
 
             # Skip off-range aircraft (small win)
@@ -760,16 +714,6 @@ class ADSBRadarApp:
             items = self.aircraft_items.aircraft_canvas_items[hexid]
 
             # Update aircraft graphics
-            # Colors
-            if aircraft.category.startswith("A"):
-                outer_c = "#ffc400"
-            elif aircraft.category.startswith("B"):
-                outer_c = "#e5ff00"
-            else:
-                outer_c = "#d3d3d3"
-
-            self.canvas.itemconfig(items["outer"], outline=outer_c)
-
             # Move point
             self.canvas.coords(items["outer"], x-4, y-4, x+4, y+4)
             self.canvas.coords(items["inner"], x-1, y-1, x+1, y+1)
@@ -824,6 +768,28 @@ class ADSBRadarApp:
                     self.canvas.coords(self.aircraft_items.aircraft_trails[hexid],
                                        *self.canvas.coords(self.aircraft_items.aircraft_trails[hexid]),
                                        lastx, lasty)
+            
+            if self.show_prediction.get():
+                if aircraft.track is not None and aircraft.speed is not None:
+                    pred_points = []
+                    zoom = int(self.utils.compute_zoom(aircraft.lat, self.max_range.get(), self.canvas_width))
+                    zoom = max(6, min(zoom, 18))
+
+                    for m in range(1, 6):   # 1 to 5 minutes ahead
+                        plat, plon = aircraft.predict_position(aircraft.lat, aircraft.lon, aircraft.track, aircraft.speed, m)
+                        x_f, y_f, dkm, brg = self.utils.geo_to_canvas(self.center_lat.get(), self.center_lon.get(), plat, plon, self.canvas_width, self.canvas_height, self.max_range.get())
+
+                        pred_points.append((x_f, y_f))
+
+                    flat = [coord for pt in pred_points for coord in pt]
+                    if hexid not in self.aircraft_items.prediction_lines:
+                        print("test")
+                        self.aircraft_items.prediction_lines[hexid] = self.canvas.create_line(
+                            flat, fill="#9be3dc", dash=(4,2), width=2, tags=("prediction_trails",), smooth=True, splinesteps=16
+                        )
+                    else:
+                        print("test2")
+                        self.canvas.coords(self.aircraft_items.prediction_lines[hexid], *flat)
 
         # Update timeline count
         self.timeline.update_timeline(self.source_dump.aircrafts_count())

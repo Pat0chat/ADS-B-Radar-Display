@@ -26,7 +26,7 @@ Ce script affiche :
 ```bash
 git clone https://github.com/Pat0chat/ADS-B-Radar-Display.git
 cd ADS-B-Radar-Display
-pip install requests pillow
+pip install requests pillow pyproj
 ```
 
 ## 🛠️ 3. Configuration

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
-from collections import deque
 import time
+from collections import deque
+from pyproj import Geod
+geod = Geod(ellps="WGS84")
 
 # ------------------- Aircrafts -------------------
 class Aircrafts:
@@ -11,15 +13,16 @@ class Aircrafts:
         self.aircrafts = {}
         self.canvas_ids = {}
         self.aircraft_canvas_items = {}
-        self.aircraft_trails = {} 
+        self.aircraft_trails = {}
+        self.prediction_lines = {}
     
     def create_canvas_item(self, canvas, hexid, x, y):
         items = {}
 
         # Outer dot
-        items["outer"] = canvas.create_oval(
-            x-4, y-4, x+4, y+4,
-            outline="#ffc400",
+        id = items["outer"] = canvas.create_oval(
+            x-3, y-3, x+3, y+3,
+            outline="#ffffff",
             width=2,
             tags=("aircraft",)
         )
@@ -53,6 +56,7 @@ class Aircrafts:
         )
 
         self.aircraft_canvas_items[hexid] = items
+        self.canvas_ids[hexid] = id
 
     def update_aircrafts(self, data, max_trails):
         """Update planes from received data."""
@@ -118,6 +122,11 @@ class Aircrafts:
             if trail_id is not None:
                 canvas.delete(trail_id)
 
+            # Delete prediction path if exists
+            if hexid in self.prediction_lines:
+                canvas.delete(self.prediction_lines[hexid])
+                del self.prediction_lines[hexid]
+
             del self.aircrafts[hexid]
 
     
@@ -132,10 +141,6 @@ class Aircrafts:
     def get_canvas_ids(self):
         """Get all canvas ids created in UI."""
         return self.canvas_ids
-    
-    def set_canvas_id(self, hex, canvas_id):
-        """Set a canvas id to a hexid parameter. Used to associate plane to a rendered object."""
-        self.canvas_ids[hex] = canvas_id
     
     def clear_trails(self):
         """Clear all trails."""
@@ -179,3 +184,9 @@ class Aircraft:
     def update_trail(self, x, y):
         """Update plane's trail."""
         self.trail.append((x, y, self.altitude))
+    
+    def predict_position(self, lat, lon, heading_deg, speed_kt, minutes_ahead):
+        """Predict position of the plane x minutes ahead."""
+        distance_km = speed_kt * 1.852 * (minutes_ahead / 60.0)
+        lon2, lat2, _ = geod.fwd(lon, lat, heading_deg, distance_km * 1000)
+        return lat2, lon2
