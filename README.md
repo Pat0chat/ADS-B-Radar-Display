@@ -4,19 +4,20 @@ Affichage radar temps réel utilisant **dump1090**, une clé **RTL-SDR** et une 
 
 Ce script affiche :  
 ✔ avions en temps réel  
-✔ symbole avion orienté selon le cap  
+✔ vecteur vitesse
 ✔ altitude + vitesse + identification  
 ✔ historique des trajectoires  
-✔ clic sur avion → fenêtre d’informations  
+✔ clic sur avion → fenêtre d’informations
+✔ cartography OSM
 
 ## 📦 1. Prérequis
 
 ### Matériel
-- Raspberry Pi
+- Raspberry Pi / Matériel Linux
 - Clé RTL-SDR (RTL2832U)
 
 ### Logiciels
-- Raspberry Pi OS
+- Raspberry Pi OS / Distribution Ubuntu ou Debian 
 - Python 3.7+
 - dump1090
 
@@ -31,7 +32,7 @@ pip install requests pillow
 ## 🛠️ 3. Configuration
 
 ### Simulateur
-Ouvrir le fichier `config.json` dans le dossier **radar** et modifier les valeurs :
+Ouvrir le fichier `config.json` dans le dossier **simulator** et modifier les valeurs :
 ```json
 {
     "host": "0.0.0.0",
@@ -51,7 +52,6 @@ Ouvrir le fichier `config.json` dans le dossier **radar** et modifier les valeur
     "data_url": "http://localhost:8080/data.json",
     "radar_lat": 48.6833,
     "radar_lon": 2.1333,
-    "refresh_ms": 1000,
     "max_range_km": 200,
     "canvas_size": 800,
     "trail_max": 120
