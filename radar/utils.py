@@ -48,9 +48,9 @@ class Utils:
             cos_lat = 0.01  # avoid poles
 
         zoom = math.log2((156543.03392 * cos_lat) / target_mpp)
-        zoom = (int(zoom))
+        zoom = math.ceil(zoom)
         zoom = max(6, min(zoom, 18)) # Clamp to OSM valid zoom
-        
+
         self.zoom = zoom
         self.zoom_pixels = 256 * (2 ** self.zoom)
         return self.zoom
