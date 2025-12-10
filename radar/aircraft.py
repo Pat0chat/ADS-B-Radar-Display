@@ -132,6 +132,11 @@ class Aircrafts:
             # Delete canvas_ids
             if hexid in self.canvas_ids:
                 del self.canvas_ids[hexid]
+            
+            # Delete label leaders
+            if hexid in self.label_leaders:
+                    canvas.delete(self.label_leaders[hexid])
+                    del self.label_leaders[hexid]
 
             del self.aircrafts[hexid]
 
@@ -148,10 +153,11 @@ class Aircrafts:
         """Get all canvas ids created in UI."""
         return self.canvas_ids
     
-    def clear_trails(self):
+    def clear_trails(self, max_trails):
         """Clear all trails."""
         for hexid in self.aircrafts.keys():
             self.aircrafts[hexid].trail.clear()
+            self.aircrafts[hexid].set_max_trails(max_trails)
     
     def closest_point_on_bbox(self, cx, cy, bbox):
         """
@@ -413,6 +419,9 @@ class Aircraft:
         self.bearing_deg = 0
 
         self.trail = deque(maxlen=max_trails)
+
+    def set_max_trails(self, max_trails):
+        self.trail = deque(self.trail, maxlen=max_trails)
 
     def update_from_raw(self, raw):
         """Update airplane data."""

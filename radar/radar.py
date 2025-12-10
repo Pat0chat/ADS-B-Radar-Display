@@ -499,7 +499,7 @@ class ADSBRadarApp:
 
     def clear_trails(self):
         """Erase all stored trails and canvas trail objects."""
-        self.aircraft_items.clear_trails()
+        self.aircraft_items.clear_trails(self.trail_length.get())
         self.canvas.delete('trails')
         self.aircraft_items.aircraft_trails = {}
 
