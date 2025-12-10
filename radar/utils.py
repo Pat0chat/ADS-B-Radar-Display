@@ -6,6 +6,7 @@ import math
 class Utils:
     """Utils functions."""
     def __init__(self):
+        self.zoom = 0
         pass
 
 
@@ -46,14 +47,15 @@ class Utils:
             cos_lat = 0.01  # avoid poles
 
         zoom = math.log2((156543.03392 * cos_lat) / target_mpp)
+        zoom = max(6, min(zoom, 18)) # Clamp to OSM valid zoom
+        
+        self.zoom = zoom
+        return self.zoom
 
-        # Clamp to OSM valid zoom
-        return max(0, min(zoom, 18))
-
-    def project(self, lat, lon, zoom):
+    def project(self, lat, lon):
         """Convert lat/lon to Web Mercator tile coordinates."""
         # Compute center pixel coordinates
-        scale = 256 * (2 ** zoom)
+        scale = 256 * (2 ** self.zoom)
 
         # Global pixel X
         px_center = (lon + 180.0) / 360.0 * scale

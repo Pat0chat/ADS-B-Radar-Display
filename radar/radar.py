@@ -511,7 +511,7 @@ class ADSBRadarApp:
         self.aircraft_items.prediction_lines = {}
 
     # ------------------- Radar rendering -------------------
-    def draw_osm_background(self):
+    def draw_osm_background(self, zoom):
         """
         Draw a perfectly centered OSM map using correct WebMercator math.
         Tiles are aligned using pixel-precise offsets to ensure the map
@@ -526,12 +526,8 @@ class ADSBRadarApp:
         lat = self.center_lat.get()
         lon = self.center_lon.get()
 
-        # Compute dynamic zoom
-        zoom = int(self.utils.compute_zoom(lat, self.max_range.get(), cw))
-        zoom = max(6, min(zoom, 18))   # OSM safe zoom range
-
         # Compute center pixel coordinates
-        px_center, py_center = self.utils.project(lat, lon, zoom)
+        px_center, py_center = self.utils.project(lat, lon)
 
         # Compute pixel coordinates for top-left
         px0 = px_center - cw / 2
@@ -582,9 +578,12 @@ class ADSBRadarApp:
         major_tick = "#3dd6c6"
         cardinal_color = "#9be3dc"
 
+        # Compute dynamic zoom
+        zoom = self.utils.compute_zoom(self.center_lat.get(), self.max_range.get(), self.canvas_width)
+
         # Draw OSM map if enabled
         if self.show_osm.get():
-            self.draw_osm_background()
+            self.draw_osm_background(zoom)
             ring_color = "#ffffff"
             label_color = "#ffffff"
             minor_tick = "#cccccc"
@@ -772,8 +771,6 @@ class ADSBRadarApp:
             if self.show_prediction.get():
                 if aircraft.track is not None and aircraft.speed is not None:
                     pred_points = []
-                    zoom = int(self.utils.compute_zoom(aircraft.lat, self.max_range.get(), self.canvas_width))
-                    zoom = max(6, min(zoom, 18))
 
                     for m in range(1, 6):   # 1 to 5 minutes ahead
                         plat, plon = aircraft.predict_position(aircraft.lat, aircraft.lon, aircraft.track, aircraft.speed, m)
