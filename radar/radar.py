@@ -223,6 +223,7 @@ class ADSBRadarApp:
         self.refresh_time = tk.IntVar(value=1000)
         self.show_osm = tk.BooleanVar(value=False)
         self.show_prediction = tk.BooleanVar(value=False)
+        self.show_label_covering = tk.BooleanVar(value=False)
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE, height=CANVAS_SIZE, bg="#0C1016")
@@ -289,19 +290,16 @@ class ADSBRadarApp:
         ).pack(fill="x")
 
         ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w")
+        ttk.Checkbutton(self.controls, text="Show label covering", variable=self.show_label_covering).pack(anchor="w")
         ttk.Checkbutton(self.controls, text="Pause updates", variable=self.paused).pack(anchor="w")
         ttk.Checkbutton(self.controls, text="Show OSM background", variable=self.show_osm, command=self.refresh_now).pack(anchor="w")
         ttk.Checkbutton(self.controls, text="Predicted paths", variable=self.show_prediction).pack(anchor="w")
 
-        ttk.Button(self.controls, text="Refresh view",
-                   command=self.refresh_now).pack(anchor="w", fill="x", pady=(6, 0))
-        ttk.Button(self.controls, text='Clear trails',
-                   command=self.clear_trails).pack(anchor="w", fill='x', pady=(6, 0))
-        ttk.Button(self.controls, text='Clear predicted paths',
-                   command=self.clear_predicted_paths).pack(anchor="w", fill='x', pady=(6, 0))
+        ttk.Button(self.controls, text="Refresh view", command=self.refresh_now).pack(anchor="w", fill="x", pady=(6, 0))
+        ttk.Button(self.controls, text='Clear trails', command=self.clear_trails).pack(anchor="w", fill='x', pady=(6, 0))
+        ttk.Button(self.controls, text='Clear predicted paths', command=self.clear_predicted_paths).pack(anchor="w", fill='x', pady=(6, 0))
 
-        ttk.Label(self.controls, text="Altitude Legend:").pack(
-            anchor="w", pady=(6, 0))
+        ttk.Label(self.controls, text="Altitude Legend:").pack(anchor="w", pady=(6, 0))
 
         alt_legend = tk.Canvas(self.controls, width=140, height=30, bg="#ffffff", highlightthickness=1, highlightbackground="#000")
         alt_legend.pack(pady=(2, 6))
@@ -785,6 +783,10 @@ class ADSBRadarApp:
                         )
                     else:
                         self.canvas.coords(self.aircraft_items.prediction_lines[hexid], *flat)
+        
+        # After all aircraft have been drawn/updated, check covering labels:
+        if self.show_labels.get() and self.show_label_covering.get():
+            self.aircraft_items.resolve_labels_and_draw_leaders(self.canvas)
 
         # Update timeline count
         self.timeline.update_timeline(self.source_dump.aircrafts_count())
