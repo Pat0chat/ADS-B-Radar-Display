@@ -2,13 +2,13 @@
 
 Affichage radar temps réel utilisant **dump1090**, une clé **RTL-SDR** et une interface graphique Tkinter.
 
-Ce script affiche :  
-✔ avions en temps réel  
-✔ vecteur vitesse
-✔ altitude + vitesse + identification  
-✔ historique des trajectoires  
-✔ clic sur avion → fenêtre d’informations
-✔ cartography OSM
+Ce script affiche :
+- avions en temps réel  
+- vecteur vitesse
+- altitude + vitesse + identification  
+- historique des trajectoires  
+- clic sur avion → fenêtre d’informations
+- cartography OSM
 
 ## 📦 1. Prérequis
 
