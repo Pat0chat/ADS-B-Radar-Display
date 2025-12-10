@@ -288,9 +288,9 @@ class ADSBRadarApp:
             command=lambda: self.source_dump.update_refresh(self.refresh_time.get())
         ).pack(fill="x")
 
-        ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w", pady=(6, 0))
-        ttk.Checkbutton(self.controls, text="Pause updates", variable=self.paused).pack(anchor="w", pady=(6, 0))
-        ttk.Checkbutton(self.controls, text="Show OSM background", variable=self.show_osm, command=self.refresh_now).pack(anchor="w", pady=(6, 0))
+        ttk.Checkbutton(self.controls, text="Show labels", variable=self.show_labels).pack(anchor="w")
+        ttk.Checkbutton(self.controls, text="Pause updates", variable=self.paused).pack(anchor="w")
+        ttk.Checkbutton(self.controls, text="Show OSM background", variable=self.show_osm, command=self.refresh_now).pack(anchor="w")
         ttk.Checkbutton(self.controls, text="Predicted paths", variable=self.show_prediction).pack(anchor="w")
 
         ttk.Button(self.controls, text="Refresh view",
@@ -783,12 +783,10 @@ class ADSBRadarApp:
 
                     flat = [coord for pt in pred_points for coord in pt]
                     if hexid not in self.aircraft_items.prediction_lines:
-                        print("test")
                         self.aircraft_items.prediction_lines[hexid] = self.canvas.create_line(
                             flat, fill="#9be3dc", dash=(4,2), width=2, tags=("prediction_trails",), smooth=True, splinesteps=16
                         )
                     else:
-                        print("test2")
                         self.canvas.coords(self.aircraft_items.prediction_lines[hexid], *flat)
 
         # Update timeline count

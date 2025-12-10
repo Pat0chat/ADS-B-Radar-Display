@@ -127,6 +127,10 @@ class Aircrafts:
                 canvas.delete(self.prediction_lines[hexid])
                 del self.prediction_lines[hexid]
 
+            # Delete canvas_ids
+            if hexid in self.canvas_ids:
+                del self.canvas_ids[hexid]
+
             del self.aircrafts[hexid]
 
     
