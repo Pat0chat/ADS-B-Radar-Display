@@ -781,7 +781,7 @@ class ADSBRadarApp:
                     flat = [coord for pt in pred_points for coord in pt]
                     if hexid not in self.aircraft_items.prediction_lines:
                         self.aircraft_items.prediction_lines[hexid] = self.canvas.create_line(
-                            flat, fill="#9be3dc", dash=(4,2), width=2, tags=("prediction_trails",), smooth=True, splinesteps=16
+                            flat, fill="#e6ffff", dash=(4,2), width=2, tags=("prediction_trails",), smooth=True, splinesteps=16
                         )
                     else:
                         self.canvas.coords(self.aircraft_items.prediction_lines[hexid], *flat)
