@@ -663,6 +663,91 @@ class ADSBRadarApp:
         
         # Toggle button
         self.create_toogle_button()
+    
+    def resolve_labels_and_draw_leaders(self):
+        """
+        1) Try spiral placement in priority order (closest first).
+        2) If overlaps remain, run relaxation.
+        3) Draw/update leader-lines.
+        """
+        # 1) collect labels with priority (distance to center)
+        label_data = []
+        for hexid, items in self.aircraft_items.aircraft_canvas_items.items():
+            lbl = items['label']
+            outer = items['outer']
+            x0, y0, x1, y1 = self.canvas.coords(outer)
+            cx = (x0 + x1) / 2
+            cy = (y0 + y1) / 2
+            aircraft = self.aircraft_items.get_aircraft(hexid)
+            priority_dist = aircraft.distance_km if aircraft else 99999
+            # priority weight: closer => larger priority (so they move less)
+            priority = 1.0 / (0.001 + priority_dist)  # small dist -> bigger priority
+            label_data.append({'hex': hexid, 'lbl': lbl, 'cx': cx, 'cy': cy, 'priority': priority})
+
+        # sort nearest first (highest priority weight first)
+        label_data.sort(key=lambda i: -i['priority'])
+
+        placed_bboxes = []
+        placed_bboxes_map = {}  # hex -> bbox
+        for info in label_data:
+            bbox = self.utils.place_label_spiral(self.canvas, info['lbl'], info['cx'], info['cy'], placed_bboxes, max_radius=90)
+            if bbox:
+                placed_bboxes.append(bbox)
+                placed_bboxes_map[info['hex']] = bbox
+
+        # 2) if overlaps still exist, relax (use the label_data list)
+        # detect if any overlap in placed_bboxes
+        need_relax = False
+        bboxes = list(placed_bboxes_map.items())
+        for i in range(len(bboxes)):
+            for j in range(i+1, len(bboxes)):
+                if self.utils.bbox_overlap(bboxes[i][1], bboxes[j][1]):
+                    need_relax = True
+                    break
+            if need_relax:
+                break
+
+        if need_relax:
+            updated_map = self.utils.relax_label_positions(self.canvas, label_data, placed_bboxes_map, iterations=8, move_limit=10)
+            placed_bboxes_map.update(updated_map)
+
+        # 3) draw/update leader-lines (self.label_leaders dict expected)
+        if not hasattr(self.aircraft_items, "label_leaders"):
+            self.aircraft_items.label_leaders = {}
+
+        for info in label_data:
+            hexid = info['hex']
+            lbl = info['lbl']
+            # get label bbox (fresh)
+            bbox = placed_bboxes_map.get(hexid) or self.canvas.bbox(lbl)
+            if bbox is None:
+                continue
+            # aircraft screen pos
+            acx, acy = info['cx'], info['cy']
+            # Compute label anchor point on the bbox edge
+            label_edge_x, label_edge_y = self.utils.closest_point_on_bbox(acx, acy, bbox)
+
+            # Distance aircraft -> label edge
+            px_dist = math.hypot(label_edge_x - acx, label_edge_y - acy)
+
+            # Threshold for drawing leader-line
+            if px_dist > 15:
+                if hexid not in self.aircraft_items.label_leaders:
+                    self.aircraft_items.label_leaders[hexid] = self.canvas.create_line(
+                        acx, acy,
+                        label_edge_x, label_edge_y,
+                        fill="#ffffff",
+                        width=1,
+                        dash=(3, 2),
+                        tags=("leader",),
+                        smooth=True
+                    )
+                else:
+                    self.canvas.coords(self.aircraft_items.label_leaders[hexid], acx, acy, label_edge_x, label_edge_y)
+            else:
+                if hexid in self.aircraft_items.label_leaders:
+                    self.canvas.delete(self.aircraft_items.label_leaders[hexid])
+                    del self.aircraft_items.label_leaders[hexid]
 
     def update_frame(self):
         """Update aircraft data and redraw dynamic canvas items."""
@@ -786,7 +871,9 @@ class ADSBRadarApp:
         
         # After all aircraft have been drawn/updated, check covering labels:
         if self.show_labels.get() and self.show_label_covering.get():
-            self.aircraft_items.resolve_labels_and_draw_leaders(self.canvas)
+            self.resolve_labels_and_draw_leaders()
+        
+        self.canvas.tag_raise("aircraft_label")
 
         # Update timeline count
         self.timeline.update_timeline(self.source_dump.aircrafts_count())
