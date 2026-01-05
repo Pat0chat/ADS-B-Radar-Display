@@ -95,6 +95,6 @@ class OSMSource:
             resp = self.session.get(url, timeout=5)
             resp.raise_for_status()
             return Image.open(io.BytesIO(resp.content))
-        except Exception:
+        except Exception as e:
             print(f"OSM tile error: {e}")
             return None
