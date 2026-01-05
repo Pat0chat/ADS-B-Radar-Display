@@ -4,7 +4,6 @@ import io
 import threading
 import time
 import requests
-import urllib.request
 from PIL import Image
 
 # ------------------- Dump1090Source -------------------
@@ -91,10 +90,11 @@ class OSMSource:
 
     def fetch_osm_tile(self, z, x, y):
         """Download a single OSM tile. Return PIL image or None."""
+        url = f"https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
         try:
-            url = f"https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png"
-            with urllib.request.urlopen(url, timeout=2) as resp:
-                data = resp.read()
-            return Image.open(io.BytesIO(data))
+            resp = self.session.get(url, timeout=5)
+            resp.raise_for_status()
+            return Image.open(io.BytesIO(resp.content))
         except Exception:
+            print(f"OSM tile error: {e}")
             return None
