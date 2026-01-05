@@ -209,7 +209,7 @@ class ADSBRadarApp:
     interactions with the datasource and aircraft collection.
     """
 
-    def __init__(self, root, DATA_URL, RADAR_LAT, RADAR_LON, MAX_RANGE_KM, CANVAS_SIZE, TRAIL_MAX):
+    def __init__(self, root, DATA_URL, PROXY, RADAR_LAT, RADAR_LON, MAX_RANGE_KM, CANVAS_SIZE, TRAIL_MAX):
         self.root = root
         root.title("ADS-B Radar")
 
@@ -224,6 +224,7 @@ class ADSBRadarApp:
         self.show_osm = tk.BooleanVar(value=False)
         self.show_prediction = tk.BooleanVar(value=False)
         self.show_label_covering = tk.BooleanVar(value=False)
+        self.proxy = PROXY
 
         # --- Main radar canvas ---
         self.canvas = tk.Canvas(root, width=CANVAS_SIZE, height=CANVAS_SIZE, bg="#0C1016")
@@ -349,7 +350,7 @@ class ADSBRadarApp:
         self.source_dump.start()
         self.prev_update = self.source_dump.last_seen_time
 
-        self.source_osm = OSMSource()
+        self.source_osm = OSMSource(self.proxy)
 
         # --- UI ---
         #Toggle button

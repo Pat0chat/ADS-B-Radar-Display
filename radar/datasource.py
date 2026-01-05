@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import io
-import math
 import threading
 import time
 import requests
@@ -80,7 +79,14 @@ class Dump1090Source:
 class OSMSource:
     """OSMSource class fetching data from OSM API."""
 
-    def __init__(self):
+    def __init__(self, proxy):
+        self.session = requests.Session()
+        self.proxy = proxy
+        if self.proxy != "":
+            self.session.proxies.update({
+                "http":  self.proxy,
+                "https": self.proxy
+            })
         pass
 
     def fetch_osm_tile(self, z, x, y):

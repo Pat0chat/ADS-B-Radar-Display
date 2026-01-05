@@ -28,6 +28,7 @@ REFRESH_MS = 1000     # update interval in milliseconds
 MAX_RANGE_KM = 200    # maximum radar range shown (km)
 CANVAS_SIZE = 800     # pixels (square canvas)
 TRAIL_MAX = 100       # default number of points in trail
+PROXY = ""            # proxy to use for the requests
 
 
 # ------------------- Utilities -------------------
@@ -69,9 +70,12 @@ if __name__ == "__main__":
             CANVAS_SIZE = int(cfg["canvas_size"])
         if "trail_max" in cfg:
             TRAIL_MAX = int(cfg["trail_max"])
+        if "proxy" in cfg:
+            PROXY = cfg["proxy"]
 
         print("[ADS-B Radar] **** Setup ****")
         print("[ADS-B Radar] Dump1090 URL: " + DATA_URL)
+        print("[ADS-B Radar] Proxy: " + PROXY)
         print("[ADS-B Radar] Radar lat: " + str(RADAR_LAT))
         print("[ADS-B Radar] Radar long: " + str(RADAR_LON))
         print("[ADS-B Radar] Max range (km): " + str(MAX_RANGE_KM))
@@ -80,7 +84,7 @@ if __name__ == "__main__":
         print("[ADS-B Radar] ****")
 
         root = tk.Tk()
-        app = ADSBRadarApp(root, DATA_URL, RADAR_LAT, RADAR_LON,
+        app = ADSBRadarApp(root, DATA_URL, PROXY, RADAR_LAT, RADAR_LON,
                            MAX_RANGE_KM, CANVAS_SIZE, TRAIL_MAX)
 
         def on_close():

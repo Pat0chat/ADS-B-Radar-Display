@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import math
 import time
 from collections import deque
 from pyproj import Geod
